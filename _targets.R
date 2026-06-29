@@ -433,6 +433,21 @@ list(
     },
     format = "file"
   ),
+  # --- Tufte-style alternative (opt-in; originals above are untouched) ---
+  tar_target(exp1_plot_tufte,
+             make_exp1_tufte(bind_rows(exp1_results_raw))),
+  tar_target(
+    exp1_fig_tufte,
+    {
+      dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+      ggsave("fig/tufte/exp1_tufte.pdf", exp1_plot_tufte,
+             width = 5.4, height = 2.0, dpi = fig_dpi)
+      ggsave("fig/tufte/exp1_tufte.png", exp1_plot_tufte,
+             width = 5.4, height = 2.0, dpi = 200)
+      "fig/tufte/exp1_tufte.pdf"
+    },
+    format = "file"
+  ),
 
   # ===========================================================================
   # Figures: Experiment 2
@@ -564,5 +579,39 @@ list(
       "fig/exp6/exp6_combined.png"
     },
     format = "file"
-  )
+  ),
+
+  # ===========================================================================
+  # Tufte-style ALTERNATIVE figures (opt-in; originals above are untouched)
+  # ===========================================================================
+  tar_target(exp2_plot_tufte, make_exp2_tufte(bind_rows(exp2_results_raw))),
+  tar_target(exp2_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp2_tufte.pdf", exp2_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp2_tufte.png", exp2_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp2_tufte.pdf" }, format = "file"),
+  tar_target(exp3_plot_tufte, make_exp3_tufte(bind_rows(exp3_results_raw))),
+  tar_target(exp3_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp3_tufte.pdf", exp3_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp3_tufte.png", exp3_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp3_tufte.pdf" }, format = "file"),
+  tar_target(exp4a_plot_tufte, make_exp4_tufte(bind_rows(exp4_results_raw), "a")),
+  tar_target(exp4a_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp4_a_tufte.pdf", exp4a_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp4_a_tufte.png", exp4a_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp4_a_tufte.pdf" }, format = "file"),
+  tar_target(exp4b_plot_tufte, make_exp4_tufte(bind_rows(exp4_results_raw), "b")),
+  tar_target(exp4b_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp4_b_tufte.pdf", exp4b_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp4_b_tufte.png", exp4b_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp4_b_tufte.pdf" }, format = "file"),
+  tar_target(exp5_plot_tufte, make_exp5_tufte(bind_rows(exp5_results_raw))),
+  tar_target(exp5_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp5_tufte.pdf", exp5_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp5_tufte.png", exp5_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp5_tufte.pdf" }, format = "file"),
+  tar_target(exp6_plot_tufte, make_exp6_tufte(bind_rows(exp6_results_raw))),
+  tar_target(exp6_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp6_tufte.pdf", exp6_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp6_tufte.png", exp6_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp6_tufte.pdf" }, format = "file")
 )
