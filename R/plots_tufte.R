@@ -91,7 +91,7 @@ make_exp1_tufte <- function(raw_df) {
 }
 
 # --- extra palettes for the remaining figures ---------------------------------
-palette_load2_tufte  <- c("medium" = "grey50", "high" = "grey12")          # exp3, exp4 (2 loads)
+palette_load2_tufte  <- c("medium" = "grey45", "high" = "grey10")          # exp3, exp4 (2 loads); greys match the 3-load ramp
 palette_topo_tufte   <- c("tree" = "grey68", "sp" = "grey42", "entangled" = "grey10")
 linetype_topo_tufte  <- c("tree" = "solid", "sp" = "dashed", "entangled" = "dotted")
 palette_qual_tufte   <- c("#4878D0", "#EE854A", "#6ACC64", "#956CB4")       # muted; nominal 4-level
@@ -184,6 +184,7 @@ make_exp4_tufte <- function(raw_df, which = c("a","b")) {
 #' Exp5 (Tufte): arch x governance, x = topology, colour/shape/linetype = condition (muted), facet by load.
 make_exp5_tufte <- function(raw_df) {
   df <- exp5_prepare_with_ci(raw_df); dg <- position_dodge(width = 0.25)
+  df$load_level <- factor(df$load_level, levels = c("low", "medium", "high"))  # ascending facet order
   lv   <- levels(df$condition)
   cols <- setNames(palette_qual_tufte[seq_along(lv)], lv)
   ltys <- setNames(linetype_qual_tufte[seq_along(lv)], lv)
@@ -201,13 +202,14 @@ make_exp5_tufte <- function(raw_df) {
       theme(axis.text.x = element_text(angle = 25, hjust = 1))
   }
   p1 <- panel("mean_price_volatility_mean","mean_price_volatility_lo","mean_price_volatility_hi", .sigp)
-  p2 <- panel("welfare_mean","welfare_lo","welfare_hi","Welfare")
+  p2 <- panel("welfare_mean","welfare_lo","welfare_hi","Welfare (a.u.)")
   .bottom2((p1 / p2) + plot_layout(ncol = 1, guides = "collect"))
 }
 
 #' Exp6 (Tufte): mechanism ablation, x = topology, colour/shape/linetype = mechanism (muted), facet by load.
 make_exp6_tufte <- function(raw_df, arch_filter = "naive") {
   df <- exp6_prepare(raw_df, arch_filter = arch_filter); dg <- position_dodge(width = 0.25)
+  df$load_level <- factor(df$load_level, levels = c("low", "medium", "high"))  # ascending facet order
   cols <- setNames(palette_qual_tufte[seq_along(levels(df$mechanism))], levels(df$mechanism))
   panel <- function(yc, lc, hc, ylab, pct = FALSE) {
     p <- ggplot(df, aes(graph_type, .data[[yc]], colour = mechanism, shape = mechanism,
