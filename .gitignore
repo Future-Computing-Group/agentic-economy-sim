@@ -1,0 +1,29 @@
+# R session artifacts
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+Rplots.pdf
+
+# targets cache (regenerate with targets::tar_make())
+_targets/
+
+# Generated figures and results (regenerate with pipeline)
+fig/
+results/
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+.cursorrules
+CLAUDE.md
+
+# Internal campaign log + run logs + ad-hoc dev probe (L73 — not for public release)
+OPSLOG.md
+tar_make_run*.log
+investigate_volatility.R
+# Operating-point calibration diagnostic (dev tool; non-canonical defaults). Keep
+# out of the public release; the canonical pipeline is _targets.R + R/sim_exp*.R.
+R/calibrate_market.R

@@ -1,0 +1,25 @@
+{
+  "model": "mistral:7b-instruct-q4_K_M",
+  "n_tasks": 5,
+  "structure": "series-parallel (plan -> 2 parallel tools -> aggregate)",
+  "tiers": {
+    "device": {
+      "mean_tokens": 80.2,
+      "mean_latency_ms": 1354.2580127716064,
+      "n_stage_calls": 5,
+      "demand_weight": 1.11
+    },
+    "edge": {
+      "mean_tokens": 72.4,
+      "mean_latency_ms": 1016.2945508956909,
+      "n_stage_calls": 10,
+      "demand_weight": 1.0
+    },
+    "cloud": {
+      "mean_tokens": 163.2,
+      "mean_latency_ms": 979.994010925293,
+      "n_stage_calls": 5,
+      "demand_weight": 2.25
+    }
+  }
+}

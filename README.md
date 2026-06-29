@@ -1,0 +1,114 @@
+# Simulation Code for: Real-Time AI Service Economy
+
+Simulation study for the paper:
+
+> **Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum**
+> Preprint: arXiv:2603.05614.
+
+## Research context
+
+The paper argues that the **structure of the service-dependency DAG is a first-order determinant of feasibility and welfare** in real-time AI service markets. Specifically:
+
+- Tree and series-parallel DAGs produce polymatroidal feasibility regions, enabling stable markets and tractable mechanism design.
+- Entangled DAGs introduce complementarities that cause unstable prices and NP-hard welfare maximisation.
+
+The proposed remedy is a **hybrid management architecture**: cross-domain integrators encapsulate complex subgraphs into resource slices with polymatroidal interfaces, restoring tractability at the market layer.
+
+## What this project simulates
+
+A heterogeneous device-edge-cloud environment with three compute tiers. Autonomous agents generate latency-sensitive tasks (value decays exponentially with latency; hard deadline = drop). Market clearing uses tatonnement (iterative price adjustment) over per-tier capacities, with an online logistic model that learns deadline-feasibility success rates from round outcomes.
+
+### Experiments
+
+| Experiment | What varies | Key metrics |
+|---|---|---|
+| **Exp 1** | DAG topology (tree/SP/entangled) x load | Latency, drop rate, utilisation, price volatility |
+| **Exp 2** | N agents x topology | Latency, deadline satisfaction, welfare |
+| **Exp 3** | Governance policy x topology x load | Latency, drop rate, coverage, price volatility |
+| **Exp 4** | Architecture (naive/EMA-only/hybrid) x topology x load x N | Latency, drop rate, welfare, price volatility |
+| **Exp 5** | Architecture x governance interaction | Price volatility, synergy regimes |
+| **Exp 6** | Mechanism (random/EDF/value-greedy/market) | Welfare, allocative efficiency |
+| **Exp 7** | Strategic bidding under VCG (DSIC empirics) | Best-response regret of misreporting |
+| **Exp 14** | One-at-a-time parameter sensitivity | Volatility-reduction band |
+
+Two further studies reuse the Exp 4 harness as parameter knobs rather than separate
+experiments: an **encapsulation-overhead** sweep (`enc_overhead_ms`) and a **capacity-faithfulness**
+sweep (`slice_inflation`, integrator over-advertising). The **agentic workload**
+(`agentic/run_agent_workload.py`) runs a real multi-step tool-using LLM agent (via Ollama) and
+writes its measured per-stage demand/latency profile to `agentic/agentic_profile.json`, which
+drives an agentic-topology variant of Exp 4.
+
+## Requirements
+
+- **R** (>= 4.1)
+- R packages: `targets`, `tarchetypes`, `tidyverse`, `RColorBrewer`, `patchwork`, `scales`, `future`, `boot`, `crew`
+- For the agentic workload (optional): Python 3 + a local [Ollama](https://ollama.com) server
+
+Install all R dependencies:
+
+```r
+install.packages(c("targets", "tarchetypes", "tidyverse", "RColorBrewer", "patchwork", "scales", "future", "boot", "crew"))
+```
+
+## Running the pipeline
+
+```r
+targets::tar_make()              # run the full pipeline
+targets::tar_visnetwork()        # visualise the target DAG
+targets::tar_outdated()          # check what needs rebuilding
+targets::tar_read(exp1_summary_table)  # load a result
+```
+
+## File structure
+
+```
+_targets.R            # pipeline definition
+R/
+  sim_helpers.R       # shared: DAG, env, agents, tasks, execution, trust, metrics
+  sim_market.R        # market engine: tatonnement + online success learning
+  sim_exp1.R          # Exp 1: DAG topology x load
+  sim_exp2.R          # Exp 2: agent scaling x topology
+  sim_exp3.R          # Exp 3: governance policy effects
+  sim_exp4.R          # Exp 4: naive vs hybrid architecture (+ overhead/faithfulness knobs)
+  sim_exp5.R          # Exp 5: architecture x governance interaction
+  sim_exp6.R          # Exp 6: mechanism ablation
+  sim_exp7.R          # Exp 7: strategic bidding under VCG (DSIC)
+  sim_exp14.R         # Exp 14: one-at-a-time parameter sensitivity
+  plots_exp1.R ...    # per-experiment figures (Exp 1-6)
+  plot_helpers.R      # shared plot utilities (theme, palettes)
+run_exp14.R           # standalone runner for the Exp 14 sensitivity sweep
+agentic/
+  run_agent_workload.py   # real tool-using LLM agent (Ollama); writes agentic_profile.json
+  agentic_profile.json    # measured per-stage demand/latency profile
+tests/testthat/       # unit/integration tests (run via testthat)
+```
+
+## Key model parameters
+
+All parameters are set in `_targets.R`.
+
+| Parameter | Default | Role |
+|---|---|---|
+| `n_agents` | 75 | Default agent count (high load contends without collapse) |
+| `n_rounds` | 200 | Rounds per simulation run |
+| `n_seeds` | 10 | Monte Carlo seeds per condition |
+| `task_deadlines` | {500, 750, 1000} | Task deadlines (ms; cross-continuum agentic round-trips) |
+| `lambda_l` | 0.005 | Per-ms latency decay; delta(T) = exp(-0.005 * T) |
+| `integ_efficiency_sp` | 0.75 | Integrator efficiency for SP topology |
+| `integ_efficiency_ent` | 0.85 | Integrator efficiency for entangled topology |
+| `integ_eta` | 0.15 | Integrator slice price step size |
+
+## Citation
+
+If you use this code, please cite:
+
+```bibtex
+@misc{loven2026rtaise,
+  title         = {Real-Time {AI} Service Economy: A Framework for Agentic Computing Across the Continuum},
+  author        = {Lov\'{e}n, Lauri and others},
+  year          = {2026},
+  eprint        = {2603.05614},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.GT}
+}
+```
