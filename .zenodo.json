@@ -1,0 +1,32 @@
+{
+  "upload_type": "software",
+  "title": "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\"",
+  "version": "v1.0.0",
+  "description": "R + targets pipeline reproducing the experiments in the IEEE Transactions on Services Computing paper \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\": the topology x load ablation grid, the DSIC strategic-bidding test, a measured agentic LLM workload, and the integrator faithfulness and encapsulation-overhead studies. Reproduce all results with targets::tar_make().",
+  "license": "MIT",
+  "access_right": "open",
+  "creators": [
+    { "name": "Lovén, Lauri", "affiliation": "Future Computing Group, University of Oulu, Finland", "orcid": "0000-0001-9475-4839" },
+    { "name": "Saleh, Alaa", "affiliation": "Future Computing Group, University of Oulu, Finland" },
+    { "name": "Farahani, Reza", "affiliation": "Distributed Systems Group, TU Wien, Austria" },
+    { "name": "Murturi, Ilir", "affiliation": "University of Prishtina, Kosova" },
+    { "name": "Gujar, Sujit", "affiliation": "International Institute of Information Technology, Hyderabad, India" },
+    { "name": "Bordallo López, Miguel", "affiliation": "Multimodal Sensing Lab, University of Oulu, Finland" },
+    { "name": "Donta, Praveen Kumar", "affiliation": "Stockholm University, Sweden" },
+    { "name": "Dustdar, Schahram", "affiliation": "ICREA Barcelona, Spain; TU Wien, Austria" }
+  ],
+  "keywords": [
+    "AI service markets",
+    "mechanism design",
+    "polymatroid",
+    "gross substitutes",
+    "VCG",
+    "computing continuum",
+    "edge-cloud continuum",
+    "agentic AI",
+    "service-dependency DAG"
+  ],
+  "related_identifiers": [
+    { "identifier": "arXiv:2603.05614", "relation": "isSupplementTo", "scheme": "arxiv" }
+  ]
+}

@@ -1,0 +1,61 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the accompanying paper (see preferred-citation) and the software via its Zenodo DOI."
+title: "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\""
+type: software
+version: v1.0.0
+license: MIT
+repository-code: "https://github.com/Future-Computing-Group/agentic-economy-sim"
+keywords:
+  - AI service markets
+  - mechanism design
+  - polymatroid
+  - computing continuum
+  - agentic AI
+authors:
+  - family-names: Lovén
+    given-names: Lauri
+    affiliation: "Future Computing Group, University of Oulu, Finland"
+    orcid: "https://orcid.org/0000-0001-9475-4839"
+  - family-names: Saleh
+    given-names: Alaa
+    affiliation: "Future Computing Group, University of Oulu, Finland"
+  - family-names: Farahani
+    given-names: Reza
+    affiliation: "Distributed Systems Group, TU Wien, Austria"
+  - family-names: Murturi
+    given-names: Ilir
+    affiliation: "University of Prishtina, Kosova"
+  - family-names: Gujar
+    given-names: Sujit
+    affiliation: "International Institute of Information Technology, Hyderabad, India"
+  - family-names: "Bordallo López"
+    given-names: Miguel
+    affiliation: "Multimodal Sensing Lab, University of Oulu, Finland"
+  - family-names: Donta
+    given-names: "Praveen Kumar"
+    affiliation: "Stockholm University, Sweden"
+  - family-names: Dustdar
+    given-names: Schahram
+    affiliation: "ICREA Barcelona, Spain; TU Wien, Austria"
+preferred-citation:
+  type: article
+  title: "Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum"
+  journal: "IEEE Transactions on Services Computing"
+  year: 2026
+  authors:
+    - family-names: Lovén
+      given-names: Lauri
+    - family-names: Saleh
+      given-names: Alaa
+    - family-names: Farahani
+      given-names: Reza
+    - family-names: Murturi
+      given-names: Ilir
+    - family-names: Gujar
+      given-names: Sujit
+    - family-names: "Bordallo López"
+      given-names: Miguel
+    - family-names: Donta
+      given-names: "Praveen Kumar"
+    - family-names: Dustdar
+      given-names: Schahram
