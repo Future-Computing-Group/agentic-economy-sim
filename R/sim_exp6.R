@@ -87,23 +87,29 @@ priority_class <- function(agent_id) as.integer(agent_id) %% 3L
 #' Least-requested term: this task's free share of the whole tier capacity.
 #'
 #' Kubernetes' LeastRequestedPriority scores a node by how much of it is still
-#' free once the pod is placed. The score here is one vector computed before the
-#' packing, so the share is of the whole tier capacity against this one task's
-#' recipe, not the running share left as the round fills: a ranking key, not a
-#' ledger. Here there is one aggregate capacity per tier, so with identical
-#' bundles the term is the same for every task in a round and contributes
-#' nothing to the ordering. It is computed per task from the recipe matrix
-#' rather than from the environment's single bundle, so it stops being constant
-#' exactly when tasks stop demanding the same thing.
+#' free once the pod is placed, over the resources the pod REQUESTS. The score
+#' here is one vector computed before the packing, so the share is of the whole
+#' capacity against this one task's recipe, not the running share left as the
+#' round fills: a ranking key, not a ledger.
+#'
+#' The average runs over the resources a task touches and not over every
+#' column of the recipe matrix. A resource a task does not touch is free of it
+#' by definition and contributed a share of one each under a plain row mean,
+#' which collapsed the spread across tasks by the number of untouched columns
+#' and is not what the scheduler scores. Under identical bundles every task
+#' touches everything, the expression reduces to the plain row mean exactly,
+#' and the term is constant as it always was.
 #'
 #' @param tasks_all Tibble of tasks.
 #' @param env       Environment list.
 #' @return Numeric vector in [0, 1], one per task.
 least_requested_term <- function(tasks_all, env) {
-  A   <- task_recipes(tasks_all, env)
-  cap <- tier_capacities(env)
-  C   <- cap$capacity[match(colnames(A), cap$tier)]
-  rowMeans(pmax(1 - sweep(A, 2, C, "/"), 0))
+  A       <- task_recipes(tasks_all, env)
+  cap     <- tier_capacities(env)
+  C       <- cap$capacity[match(colnames(A), cap$tier)]
+  free    <- pmax(1 - sweep(A, 2, C, "/"), 0)
+  touched <- A > 0
+  rowSums(free * touched) / pmax(rowSums(touched), 1)
 }
 
 #' Kubernetes-style scheduling rank, as one numeric score.
@@ -119,8 +125,17 @@ least_requested_term <- function(tasks_all, env) {
 k8s_rank_score <- function(tasks_all, env) {
   n <- nrow(tasks_all)
   if (n == 0) return(numeric(0))
-  1000 * priority_class(tasks_all$agent_id) +
-    10 * least_requested_term(tasks_all, env) +
+  term <- least_requested_term(tasks_all, env)
+  # Normalised across the round's tasks, which is what kube-scheduler's own
+  # scoring does and what lets the term order within a priority class at all.
+  # Unnormalised, the term's spread over a node-indexed region is a few
+  # hundredths against an arrival tiebreak spanning one, so arrival order
+  # decides by a factor of about thirty. A constant term (identical bundles)
+  # normalises to zero and shifts every task equally, so the ordering on a
+  # per-tier environment is unchanged.
+  span <- diff(range(term))
+  term <- if (span > 0) (term - min(term)) / span else rep(0, n)
+  1000 * priority_class(tasks_all$agent_id) + 10 * term +
     (1 - seq_len(n) / (n + 1))
 }
 

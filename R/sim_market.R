@@ -882,6 +882,26 @@ posted_price_anchor <- function(env, k = 1) {
   k * (env$reserve_price %||% 0) * sum(task_bundle(env)$demand)
 }
 
+#' One posted price per leaf: a markup over that leaf's own path cost.
+#'
+#' The generalisation of the single bundle price to a substrate where tasks
+#' differ in which resources they touch. One mix-average price would charge a
+#' task that passes through three nodes what a task passing through five pays,
+#' which is not a price at all: it is a levy. The anchor is the leaf's own
+#' ancestor path at the per-node reserve, which is also what the price
+#' identification argument recommends, since only the induced LEAF prices are
+#' identified by demand.
+#'
+#' @param env Environment list.
+#' @param anc An ancestor-indicator matrix.
+#' @param k   Markup over marginal cost.
+#' @param w   Token weight.
+#' @return Named numeric vector, one posted price per leaf.
+posted_price_anchor_per_leaf <- function(env, anc, k = 1,
+                                         w = env$spec$weight) {
+  k * (env$reserve_price %||% 0) * w * rowSums(anc)
+}
+
 #' Posted-price allocation: a static price instead of a discovered one.
 #'
 #' Ported from the same-author P2A sibling credible-marketplace-sim/R/sim_market.R

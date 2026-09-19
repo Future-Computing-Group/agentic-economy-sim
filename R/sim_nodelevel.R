@@ -611,6 +611,9 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
                             policy = c("none", "trust", "locality", "role",
                                        "residency", "residency_sliced"),
                             cap_target = NA_character_,
+                            mechanism = c("market", "random", "edf",
+                                          "greedy_ev", "posted_price", "k8s"),
+                            p_post_k = 1,
                             exact_reference = TRUE,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3) {
@@ -619,6 +622,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   leaf_mix   <- match.arg(leaf_mix)
   policy     <- match.arg(policy)
   architecture <- match.arg(architecture)
+  mechanism  <- match.arg(mechanism)
 
   arch      <- node_architecture(architecture)
   interface <- match.arg(interface %||% arch$interface,
@@ -682,6 +686,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   priceCvV  <- tokensV <- bindV <- numeric(n_rounds)
   ratioV    <- shapeV <- strandV <- rep(NA_real_, n_rounds)
   overV     <- numeric(n_rounds)
+  armV      <- rep(NA_real_, n_rounds)
   certV     <- rep(NA, n_rounds)
 
   for (t in seq_len(n_rounds)) {
@@ -714,7 +719,38 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
         salvage = salvage, iters = iters, eta = eta, beta = beta)
     }
 
-    if (sliced) {
+    if (mechanism != "market") {
+      # The five arms that do not discover a price. Each produces a score and
+      # the shared packing kernel admits by it under the node capacities, so
+      # what separates them is the ranking key and, for the posted price, the
+      # participation screen.
+      scores <- switch(
+        mechanism,
+        random    = runif(n_gen, min = 0.01, max = 1.0),
+        edf       = if (n_gen == 0L) numeric(0) else
+                      (max(tasks_all$deadline, na.rm = TRUE) + 1) -
+                        tasks_all$deadline,
+        k8s       = k8s_rank_score(tasks_all, env),
+        task_expected_value(
+          tasks_all, bid$util_hat, bid$base_latency, ms$success_model,
+          alpha = alpha, p = p,
+          lambda_l_default = lambda_l_default, salvage = salvage))
+
+      if (mechanism == "posted_price") {
+        p_leaf <- posted_price_anchor_per_leaf(env, anc, k = p_post_k)
+        p_task <- unname(p_leaf[as.character(tasks_all$recipe)])
+        allocation   <- posted_price_allocate(tasks_all, env, scores, p_task)
+        # The price is what agents face whether or not they take it, so it is
+        # recorded every round, as the market arm records what it cleared at.
+        unitCostV[t] <- if (n_gen == 0L) NA_real_ else mean(p_task)
+      } else {
+        allocation   <- pack_tasks_greedy(tasks_all, scores, env)
+        unitCostV[t] <- NA_real_
+      }
+      # A rank scheduler has no price process, so there is none to disperse.
+      prices <- dplyr::transmute(tier_capacities(env), tier = tier, price = 0)
+
+    } else if (sliced) {
       # Two independent markets over disjoint leaf sets, each a coordinate
       # truncation of a laminar region. The shared internal nodes are split
       # with the leaves, so the two together never admit more than the device
@@ -821,6 +857,11 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
       }
       if (is.finite(pair[["exact"]]) && pair[["exact"]] > 0) {
         ratioV[t] <- pair[["greedy"]] / pair[["exact"]]
+        # What THIS arm delivered against the same reference. The structural
+        # ratio above compares the packing rule; this one compares the
+        # mechanism, which is what the ablation is scored on.
+        armV[t] <- sum(ev[match(allocation$task_id, tasks_all$task_id)]) /
+          pair[["exact"]]
       }
 
       # How much of what the node capacities could route the leaf-block region
@@ -845,6 +886,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
     leaf_mix                   = leaf_mix,
     architecture               = architecture,
     interface                  = interface,
+    mechanism                  = mechanism,
+    p_post_k                   = as.numeric(p_post_k),
     policy                     = policy,
     cap_target                 = cap_target,
     median_latency             = mean(medL, na.rm = TRUE),
@@ -867,6 +910,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
                                  else mean(below, na.rm = TRUE),
     greedy_exact_worst         = if (all(is.na(ratioV))) NA_real_
                                  else min(ratioV, na.rm = TRUE),
+    arm_exact_ratio            = mean(armV, na.rm = TRUE),
     flow_bound_ratio           = lb_full / flow_full,
     flow_bound_token_gap       = flow_full - lb_full,
     shape_refusal_fraction     = mean(shapeV, na.rm = TRUE),

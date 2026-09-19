@@ -28,6 +28,71 @@ suppressPackageStartupMessages({
 })
 
 
+#' The environment an Exp.7 arm runs on, saturated so the cell is not vacuous.
+#'
+#' Two substrates. The tier one is the identical-bundle environment both arms
+#' have always run on, with every tier's capacity set to one scalar. The node
+#' one is a leaf-block instance, where that would flatten the capacity vector
+#' and destroy the instance: it is SCALED instead, which keeps the structure
+#' and writes both copies of capacity together.
+#'
+#' @param graph_type DAG topology or arm name.
+#' @param load_level Load regime.
+#' @param N          Agent population.
+#' @param cap        Per-tier capacity override, tier substrate only.
+#' @param substrate  "tier" or "node".
+#' @param cap_scale  Capacity multiplier, node substrate only.
+#' @return An environment list.
+exp7_environment <- function(graph_type, load_level, N, cap, substrate,
+                             cap_scale) {
+  if (substrate == "node") {
+    return(scale_capacities(
+      node_run_env(graph_type, load_level, N, "uniform", "off"), cap_scale))
+  }
+  env <- init_environment(build_dependency_graph(graph_type), load_level,
+                          n_agents = N, graph_type = graph_type)
+  exp7_require_identical_bundles(env)
+  env$capacities <- mutate(env$capacities, capacity = cap)
+  env
+}
+
+#' One round of tasks for an Exp.7 arm.
+#'
+#' @param env       Environment list.
+#' @param agents    Agent tibble.
+#' @param t         Round index.
+#' @param seed      The run's seed.
+#' @param deadlines Integer vector of possible deadlines (ms).
+#' @param substrate "tier" or "node".
+#' @return A tibble of tasks, carrying a `recipe` column on the node substrate.
+exp7_round_tasks <- function(env, agents, t, seed, deadlines, substrate) {
+  if (substrate == "node") {
+    return(node_round_tasks(env, agents, t, seed, deadlines))
+  }
+  bind_tasks(lapply(split(agents, agents$agent_id), function(a)
+    generate_tasks(a, env, round = t, deadlines = deadlines)))
+}
+
+#' Record the exactness verdict on the environment, once per branch.
+#'
+#' The region is constant across the rounds of an Exp.7 arm -- no governance
+#' cap moves inside one -- and unit leaf-token demand is what the driver draws
+#' every round, so the verdict is computed once and carried. It is the ONLY
+#' thing that lifts the incentive guard, and it is written by the certifier
+#' and never by hand.
+#'
+#' @param env       Environment list.
+#' @param tasks_all The round's tasks.
+#' @param substrate "tier" or "node".
+#' @return The environment, carrying `dsic_status` on the node substrate.
+exp7_certify <- function(env, tasks_all, substrate) {
+  if (substrate != "node" || !is.null(env$dsic_status)) return(env)
+  env$dsic_status <- if (dsic_certificate(env, tasks_all)) "certified"
+                     else "uncertified"
+  env
+}
+
+
 #' Run a single Exp.7a configuration (one seed): VCG best-response sweep.
 #'
 #' Each round, all agents report truthfully and the VCG allocation + payments
@@ -50,26 +115,30 @@ suppressPackageStartupMessages({
 #'                   set, rescaled to its measured critical path.
 #' @param lambda_l_default Per-ms value-decay rate, rescaled with the deadlines.
 #' @param util_hat   Exogenous congestion estimate fed to valuations.
+#' @param substrate  "tier" for the identical-bundle environments, "node" for
+#'                   the leaf-block instances, where the guard is lifted by a
+#'                   computed exactness certificate rather than by a bundle
+#'                   test.
+#' @param cap_scale  Saturation knob on the node substrate. Setting every
+#'                   capacity to one scalar would flatten the capacity vector
+#'                   and destroy the instance, so the node arms scale it, which
+#'                   keeps the leaf-block structure and both copies together.
 #' @return A one-row tibble: config + mean_payment + binding flag + one
 #'         regret_<alpha> column per shading factor + mean welfare.
-exp7a_run_single <- function(graph_type = c("tree", "sp", "agentic"),
+exp7a_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"),
                              load_level = c("high", "medium"),
                              N = 8L, seed = 1L, cap = 30,
                              shades = c(0.5, 0.7, 0.9, 1.0, 1.1, 1.3),
                              n_rounds = 30L, util_hat = 0.5,
                              deadlines = c(500L, 750L, 1000L),
-                             lambda_l_default = 0.005) {
+                             lambda_l_default = 0.005,
+                             substrate = c("tier", "node"), cap_scale = 1.0) {
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
+  substrate  <- match.arg(substrate)
   set.seed(seed)
 
-  graph <- build_dependency_graph(graph_type)
-  env   <- init_environment(graph, load_level, n_agents = N,
-                            graph_type = graph_type)
-  exp7_require_identical_bundles(env)
-  # Saturate: shrink per-tier capacity so allocation is competitive.
-  env$capacities <- mutate(env$capacities, capacity = cap)
-
+  env <- exp7_environment(graph_type, load_level, N, cap, substrate, cap_scale)
   agents <- init_agents(N)
   blb    <- base_latency_for_bids(env)
   sm     <- init_success_model()
@@ -77,16 +146,15 @@ exp7a_run_single <- function(graph_type = c("tree", "sp", "agentic"),
   payment_acc <- 0
   welfare_acc <- 0
   n_round_eff <- 0L
+  neg_acc     <- 0L
   # Regret accumulator per shade (summed over agent-rounds), and the count.
   regret_sum  <- setNames(numeric(length(shades)), as.character(shades))
   ar_count    <- 0L
 
   for (t in seq_len(n_rounds)) {
-    agent_split <- split(agents, agents$agent_id)
-    tasks_list  <- lapply(agent_split, function(a)
-      generate_tasks(a, env, round = t, deadlines = deadlines))
-    tasks_all <- bind_tasks(tasks_list)
+    tasks_all <- exp7_round_tasks(env, agents, t, seed, deadlines, substrate)
     if (nrow(tasks_all) == 0) next
+    env <- exp7_certify(env, tasks_all, substrate)
     if (n_round_eff == 0L) exp7_require_identical_bundles(env, tasks_all)
 
     # Truthful valuations (exogenous within the round).
@@ -95,6 +163,7 @@ exp7a_run_single <- function(graph_type = c("tree", "sp", "agentic"),
 
     res_truth <- vcg_allocate(tasks_all, env, util_hat, blb, sm,
                               lambda_l_default = lambda_l_default)
+    neg_acc     <- neg_acc + (attr(res_truth, "n_negative_externality") %||% 0L)
     payment_acc <- payment_acc + sum(res_truth$vcg_payment)
     welfare_acc <- welfare_acc + sum(res_truth$realised_value)
     n_round_eff <- n_round_eff + 1L
@@ -140,6 +209,9 @@ exp7a_run_single <- function(graph_type = c("tree", "sp", "agentic"),
     N            = as.integer(N),
     seed         = seed,
     cap          = cap,
+    substrate    = substrate,
+    certificate  = env$dsic_status %||% "identical_bundle",
+    n_negative_externality = neg_acc,
     mean_payment = mean_payment,
     mean_welfare = mean_welfare,
     binding      = mean_payment > 1e-6
@@ -331,22 +403,19 @@ br_gain_reduce <- function(gains, tol = 1e-9) {
 #'   br_gain_max + br_gain_mean + br_gain_member_argmax +
 #'   independent_fallback_rate (the share of agent-rounds with more than four
 #'   tasks, where the independent block falls back to single-task deviations).
-exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic"),
+exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"),
                              load_level = c("high", "medium"),
                              N = 8L, seed = 1L, cap = 30,
                              n_rounds = 30L, util_hat = 0.5,
                              deadlines = c(500L, 750L, 1000L),
-                             lambda_l_default = 0.005, tol = 1e-9) {
+                             lambda_l_default = 0.005, tol = 1e-9,
+                             substrate = c("tier", "node"), cap_scale = 1.0) {
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
+  substrate  <- match.arg(substrate)
   set.seed(seed)
 
-  graph <- build_dependency_graph(graph_type)
-  env   <- init_environment(graph, load_level, n_agents = N,
-                            graph_type = graph_type)
-  exp7_require_identical_bundles(env)
-  env$capacities <- mutate(env$capacities, capacity = cap)
-
+  env <- exp7_environment(graph_type, load_level, N, cap, substrate, cap_scale)
   agents <- init_agents(N)
   blb    <- base_latency_for_bids(env)
   sm     <- init_success_model()
@@ -360,20 +429,43 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic"),
   best_member <- "truthful"
   fallback_n  <- 0L
   ar_count    <- 0L
+  neg_acc     <- 0L
+  fit_n       <- 0L
+  ratio_sum   <- 0
+  ratio_n     <- 0L
 
   for (t in seq_len(n_rounds)) {
-    agent_split <- split(agents, agents$agent_id)
-    tasks_list  <- lapply(agent_split, function(a)
-      generate_tasks(a, env, round = t, deadlines = deadlines))
-    tasks_all <- bind_tasks(tasks_list)
+    tasks_all <- exp7_round_tasks(env, agents, t, seed, deadlines, substrate)
     if (nrow(tasks_all) == 0) next
+    env <- exp7_certify(env, tasks_all, substrate)
     if (n_round_eff == 0L) exp7_require_identical_bundles(env, tasks_all)
 
     true_ev <- task_expected_value(tasks_all, util_hat, blb, sm,
                                    lambda_l_default = lambda_l_default)
 
+    # The exact packer enters as the round's REFERENCE and never as its
+    # allocator: a Clarke pivot over it would be a DSIC claim on a region that
+    # carries no such guarantee. It runs only where the round fits the
+    # enumeration cap, and the share of rounds that do is reported.
+    if (substrate == "node") {
+      fits  <- nrow(tasks_all) <= 14L
+      fit_n <- fit_n + as.integer(fits)
+      if (fits) {
+        A   <- task_recipes(tasks_all, env)
+        cp  <- tier_capacities(env)
+        ex  <- exact_pack_by_value(true_ev, A,
+                                   cp$capacity[match(colnames(A), cp$tier)])$value
+        if (is.finite(ex) && ex > 0) {
+          ratio_sum <- ratio_sum +
+            sum(true_ev[.greedy_pack_by(true_ev, tasks_all, env)]) / ex
+          ratio_n <- ratio_n + 1L
+        }
+      }
+    }
+
     res_truth <- vcg_allocate(tasks_all, env, util_hat, blb, sm,
                               lambda_l_default = lambda_l_default)
+    neg_acc     <- neg_acc + (attr(res_truth, "n_negative_externality") %||% 0L)
     payment_acc <- payment_acc + sum(res_truth$vcg_payment)
     welfare_acc <- welfare_acc + sum(res_truth$realised_value)
     n_round_eff <- n_round_eff + 1L
@@ -422,6 +514,11 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic"),
     N            = as.integer(N),
     seed         = seed,
     cap          = cap,
+    substrate    = substrate,
+    certificate  = env$dsic_status %||% "identical_bundle",
+    n_negative_externality = neg_acc,
+    exact_fit_fraction = if (n_round_eff > 0) fit_n / n_round_eff else NA_real_,
+    greedy_exact_ratio = if (ratio_n > 0) ratio_sum / ratio_n else NA_real_,
     mean_payment = mean_payment,
     mean_welfare = mean_welfare,
     binding      = mean_payment > 1e-6,
