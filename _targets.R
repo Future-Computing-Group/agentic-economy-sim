@@ -116,16 +116,25 @@ list(
   # ===========================================================================
   tar_target(
     exp2_param_grid,
-    tidyr::expand_grid(
-      graph_type = c("tree", "sp", "entangled"),
-      # The grid reaches past every topology's price-dispersion onset. sp and
-      # entangled leave the reserve well inside the first half of it; tree, the
-      # slackest of the three in bottleneck demand per task, does not, so a grid
-      # that stopped at 60 reported a flat zero for tree and could not place the
-      # transition. stat_exp2() computes the onset from these runs.
-      N          = seq(10, 120, by = 10),
-      seed       = seq_len(n_seeds),
-      load_level = "medium"
+    # Two load levels, one block each, medium first and row for row as it was:
+    # the arrival rate lambda enters the bottleneck offered load
+    # rho = max_r(w_r/C_r) * lambda * N linearly, so a threshold stated on rho
+    # predicts the high-load onset at two thirds of the medium-load population,
+    # and a threshold stated on N predicts no change at all. One sweep
+    # separates them.
+    purrr::map_dfr(
+      c("medium", "high"),
+      \(load) tidyr::expand_grid(
+        graph_type = c("tree", "sp", "entangled"),
+        # The grid reaches past every topology's price-dispersion onset. sp and
+        # entangled leave the reserve well inside the first half of it; tree, the
+        # slackest of the three in bottleneck demand per task, does not, so a grid
+        # that stopped at 60 reported a flat zero for tree and could not place the
+        # transition. stat_exp2() computes the onset from these runs.
+        N          = seq(10, 120, by = 10),
+        seed       = seq_len(n_seeds),
+        load_level = load
+      )
     )
   ),
   tar_target(
@@ -143,6 +152,39 @@ list(
     iteration = "vector"
   ),
   tar_target(exp2_summary_table, exp2_aggregate(exp2_results_raw)),
+
+  # The medium-load block on its own, for the two Exp.2 figures.
+  tar_target(exp2_medium_results,
+             bind_rows(exp2_results_raw) %>% filter(load_level == "medium")),
+
+  # The measured agentic DAG as a fourth arm of the same sweep. Its demand
+  # weights are measured, not constructed, so they match none of the three
+  # synthetic topologies, and its base latencies are its own -- hence the
+  # deadline set and value-decay rate Exp.9 runs it with, unchanged, with N the
+  # only knob. Its busiest tier is the device tier at 1.11/200, so a threshold
+  # at rho = 0.75 puts the onset near N = 135; the grid steps by 20, which is
+  # 0.111 in rho, finer than the band the synthetic onsets occupy.
+  tar_target(
+    exp2b_param_grid,
+    tidyr::expand_grid(
+      N    = seq(40, 200, by = 20),
+      seed = seq_len(n_seeds)
+    )
+  ),
+  tar_target(
+    exp2b_results_raw,
+    exp2_run_single(
+      N                = exp2b_param_grid$N,
+      load_level       = "medium",
+      seed             = exp2b_param_grid$seed,
+      graph_type       = "agentic",
+      n_rounds         = n_rounds,
+      deadlines        = agentic_deadlines(path = agentic_profile_file),
+      lambda_l_default = agentic_lambda_l(path = agentic_profile_file)
+    ),
+    pattern   = map(exp2b_param_grid),
+    iteration = "vector"
+  ),
 
   # ===========================================================================
   # Experiment 3: Governance policies
@@ -534,7 +576,8 @@ list(
   # Statistical analysis (all experiments)
   # ===========================================================================
   tar_target(stats_exp1, stat_exp1(bind_rows(exp1_results_raw))),
-  tar_target(stats_exp2, stat_exp2(bind_rows(exp2_results_raw))),
+  tar_target(stats_exp2, stat_exp2(bind_rows(exp2_results_raw,
+                                             exp2b_results_raw))),
   tar_target(stats_exp3, stat_exp3(bind_rows(exp3_results_raw))),
   tar_target(stats_exp4, stat_exp4(bind_rows(exp4_results_raw))),
   tar_target(stats_exp4_factorial, stat_exp4_factorial(bind_rows(exp4_results_raw))),
@@ -641,8 +684,12 @@ list(
   # ===========================================================================
   # Figures: Experiment 2
   # ===========================================================================
+  # Both Exp.2 figures draw one line per topology against N. The load axis and
+  # the agentic arm are onset statistics, not extra lines: fed in here they
+  # would be averaged into the same line rather than drawn beside it, so the
+  # figures keep the medium-load synthetic sweep they plot.
   tar_target(exp2_plot_combined,
-             make_exp2_combined(bind_rows(exp2_results_raw))),
+             make_exp2_combined(exp2_medium_results)),
   tar_target(
     exp2_fig_combined,
     {
@@ -773,7 +820,7 @@ list(
   # ===========================================================================
   # Tufte-style ALTERNATIVE figures (opt-in; originals above are untouched)
   # ===========================================================================
-  tar_target(exp2_plot_tufte, make_exp2_tufte(bind_rows(exp2_results_raw))),
+  tar_target(exp2_plot_tufte, make_exp2_tufte(exp2_medium_results)),
   tar_target(exp2_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
     ggsave("fig/tufte/exp2_tufte.pdf", exp2_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
     ggsave("fig/tufte/exp2_tufte.png", exp2_plot_tufte, width = fig_width, height = fig_height, dpi = 200)

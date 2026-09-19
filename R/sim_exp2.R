@@ -2,14 +2,19 @@
 # ---------------------------------------------------------------------------
 # Experiment 2: Agent scaling x topology
 #
-# Varies the number of agents (N = 10, 20, ..., 120) across three topologies
-# (tree/sp/entangled) at medium load.  Shows that the rate of performance
-# degradation with increasing agent population depends on DAG structure,
-# reinforcing that topology is a first-order determinant.
+# Varies the number of agents across three synthetic topologies
+# (tree/sp/entangled, N = 10, 20, ..., 120) at medium and at high load, and
+# across the measured agentic DAG (N = 40, 60, ..., 200), whose demand weights
+# are measured rather than constructed.
+# Shows that the rate of performance degradation with increasing agent
+# population depends on DAG structure, reinforcing that topology is a
+# first-order determinant.
 #
-# The range reaches past the point where each topology's clearing price leaves
-# the reserve, so the price-dispersion onset is inside the grid for all three
-# rather than only for the two that contend earliest; stat_exp2() reports it.
+# The range reaches past the point where each arm's clearing price leaves the
+# reserve, so the price-dispersion onset is inside the grid for all of them
+# rather than only for the ones that contend earliest; stat_exp2() reports it
+# per (topology, load) as an agent count and as the bottleneck offered load
+# there, which is what separates a population threshold from a load threshold.
 #
 # Paper reference: Section VII-B, Table VI (Exp2).
 # ---------------------------------------------------------------------------
@@ -25,7 +30,9 @@ suppressPackageStartupMessages({
 #'
 #' @param N                Number of agents.
 #' @param load_level       Load regime (default: "medium").
-#' @param graph_type       DAG topology: "tree", "sp", or "entangled".
+#' @param graph_type       DAG topology: "tree", "sp", "entangled" or the
+#'   measured "agentic" DAG. The agentic environment carries its own base
+#'   latencies, so it needs its own `deadlines` and `lambda_l_default`.
 #' @param seed             Random seed.
 #' @param n_rounds         Number of simulation rounds.
 #' @param deadlines        Integer vector of possible task deadlines (ms).
@@ -39,7 +46,8 @@ suppressPackageStartupMessages({
 #' @return A single-row tibble of summary metrics.
 exp2_run_single <- function(N = 10L,
                             load_level = "medium",
-                            graph_type = c("tree", "sp", "entangled"),
+                            graph_type = c("tree", "sp", "entangled",
+                                           "agentic"),
                             seed = 1L, n_rounds = 50L,
                             deadlines = c(500L, 750L, 1000L),
                             alpha = 50, p = 1.2,

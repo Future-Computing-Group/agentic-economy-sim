@@ -378,24 +378,29 @@ stat_exp1 <- function(raw_df) {
 }
 
 
-#' Price-dispersion onset per topology.
+#' Price-dispersion onset per topology and load level.
 #'
 #' Below the population at which the bottleneck tier starts to contend, every
 #' round of a run clears at the reserve, so the dispersion column is identically
 #' zero: a monotone correlation with N summarises the whole sweep but cannot say
 #' where the market starts pricing. The onset is that boundary, taken on the
 #' across-seed mean so that a single dispersing seed does not move it, and
-#' reported beside the share of seeds that have already crossed it.
+#' reported beside the share of seeds that have already crossed it and beside
+#' the smallest population at which no seed is still at zero.
 #'
 #' It is also reported as rho, the bottleneck offered load at the onset
 #' population, from rho_bottleneck() in R/sim_helpers.R: the same definition the
 #' operating point is calibrated on and tests/testthat/test-operating-point.R
-#' pins. The topologies differ by 2.5x in bottleneck demand per task, so their
-#' onsets are comparable on offered load, not on agent count.
+#' pins. The arms differ by 2.5x in bottleneck demand per task and the load
+#' level scales the arrival rate by a further 1.5x, so the onset is keyed on
+#' (graph_type, load_level) and the rho at it is evaluated at that arm's own
+#' load: an agent count read across arms or across loads is not comparable,
+#' an offered load is.
 #'
-#' @param raw_df Per-seed results from exp2_results_raw.
-#' @return A tibble, one row per graph_type: N_onset (NA when no N in the grid
-#'   leaves zero), seeds_nonzero_at_onset, n_seeds_at_onset, rho_onset.
+#' @param raw_df Per-seed results from the Exp.2 sweeps.
+#' @return A tibble, one row per (graph_type, load_level): N_onset (NA when no N
+#'   in the grid leaves zero), seeds_nonzero_at_onset, n_seeds_at_onset,
+#'   rho_onset, N_onset_all_seeds, rho_onset_all_seeds.
 exp2_price_onset <- function(raw_df) {
   raw_df %>%
     group_by(.data$graph_type, .data$load_level, .data$N) %>%
@@ -406,27 +411,33 @@ exp2_price_onset <- function(raw_df) {
       .groups      = "drop"
     ) %>%
     arrange(.data$N) %>%
-    group_by(.data$graph_type) %>%
+    group_by(.data$graph_type, .data$load_level) %>%
     summarise(
       i                      = which(.data$mean_cv > 0)[1],
+      j                      = which(.data$frac_nonzero >= 1)[1],
       N_onset                = .data$N[i],
       seeds_nonzero_at_onset = .data$frac_nonzero[i],
       n_seeds_at_onset       = .data$n_seeds[i],
       rho_onset              = if (is.na(i)) NA_real_ else
         rho_bottleneck(dplyr::cur_group()$graph_type, .data$N[i],
-                       .data$load_level[i]),
+                       dplyr::cur_group()$load_level),
+      N_onset_all_seeds      = .data$N[j],
+      rho_onset_all_seeds    = if (is.na(j)) NA_real_ else
+        rho_bottleneck(dplyr::cur_group()$graph_type, .data$N[j],
+                       dplyr::cur_group()$load_level),
       .groups                = "drop"
     ) %>%
-    select(-"i")
+    select(-"i", -"j")
 }
 
 
 #' Statistical summary for Experiment 2 (scaling).
 #'
-#' @param raw_df Per-seed results from exp2_results_raw.
+#' @param raw_df Per-seed results from both Exp.2 sweeps, exp2_results_raw and
+#'   exp2b_results_raw, bound into one frame.
 #' @return A list: Spearman correlations per topology, the price-dispersion
-#'   onset table, and one element per topology in the shape make_stats_report
-#'   harvests.
+#'   onset table per (topology, load), and one element per (topology, load) cell
+#'   in the shape make_stats_report harvests.
 stat_exp2 <- function(raw_df) {
   metrics <- c("median_latency", "drop_rate", "utilisation",
                "mean_price_volatility", "welfare")
@@ -444,13 +455,18 @@ stat_exp2 <- function(raw_df) {
   })
 
   onset <- exp2_price_onset(raw_df)
-  report <- lapply(split(onset, onset$graph_type), function(d) {
+  # One cell per (topology, load): the onset is only comparable across arms
+  # once the load it was measured at travels with it.
+  cells <- paste(onset$graph_type, onset$load_level, sep = "_")
+  report <- lapply(split(onset, cells), function(d) {
     list(statistics = tibble(
       metric    = c("exp2_onset_N", "exp2_onset_rho",
-                    "exp2_onset_seeds_nonzero"),
+                    "exp2_onset_seeds_nonzero", "exp2_onset_N_all_seeds",
+                    "exp2_onset_rho_all_seeds"),
       group_var = "N",
       statistic = c(as.numeric(d$N_onset), d$rho_onset,
-                    d$seeds_nonzero_at_onset),
+                    d$seeds_nonzero_at_onset,
+                    as.numeric(d$N_onset_all_seeds), d$rho_onset_all_seeds),
       df        = NA_integer_,
       n         = as.integer(d$n_seeds_at_onset),
       p_value   = NA_real_,

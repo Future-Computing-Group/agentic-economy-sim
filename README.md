@@ -23,7 +23,7 @@ A heterogeneous device-edge-cloud environment with three compute tiers. Autonomo
 | Experiment | What varies | Key metrics |
 |---|---|---|
 | **Exp 1** | DAG topology (tree/SP/entangled) x load | Latency, drop rate, utilisation, price volatility |
-| **Exp 2** | N agents (10 to 120 in steps of 10) x topology | Latency, deadline satisfaction, welfare, and the price-dispersion onset: the smallest N whose mean price dispersion leaves zero, reported per topology with the bottleneck offered load rho there so the three are comparable on load rather than on agent count |
+| **Exp 2** | N agents x arm: the three synthetic topologies (10 to 120 in steps of 10) at medium and at high load, plus the measured agentic DAG (40 to 200 in steps of 20) at medium load | Latency, deadline satisfaction, welfare, and the price-dispersion onset: the smallest N whose mean price dispersion leaves zero, and the smallest N at which no seed is still at zero, reported per (topology, load) with the bottleneck offered load rho there. Whether the onset is a population or a load is what the load axis and the measured arm decide: rho scales with lambda and the measured arm's demand weights match none of the synthetic ones |
 | **Exp 3** | Governance policy (none/moderate/strict) x topology x load | Latency, drop rate, coverage, price volatility |
 | **Exp 4** | Architecture factorial: encapsulation x price smoothing (`naive`/`naive_ema`/`hybrid_noema`/`hybrid_ema`) x topology x load x N | Latency, drop rate, welfare, price volatility |
 | **Exp 5** | Architecture x governance interaction | Price volatility, synergy regimes |
