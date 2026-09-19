@@ -1,4 +1,4 @@
-"""Rung 0: a run refuses to start unless every container resolves the host backend.
+"""a run refuses to start unless every container resolves the host backend.
 
 A published container backend answers on the same name and port as the host
 daemon, so a run that skips this check can silently measure the wrong engine.

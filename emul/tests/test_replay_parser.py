@@ -1,4 +1,4 @@
-"""Rung 0: the replay parser reads the simulator's export and nothing else."""
+"""the replay parser reads the simulator's export and nothing else."""
 import json
 import tempfile
 import unittest

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rung 0: what the entrypoint installs, and what it refuses to come up without.
+# what the entrypoint installs, and what it refuses to come up without.
 #
 # Two properties. The container must not come up emulating nothing, which is
 # the defect this file was written for. And the delay must land on the hop the

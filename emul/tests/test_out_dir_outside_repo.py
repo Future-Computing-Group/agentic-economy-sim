@@ -1,4 +1,4 @@
-"""Rung 0: run data never lands inside the code repository."""
+"""run data never lands inside the code repository."""
 import tempfile
 import unittest
 from pathlib import Path

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rung 1: container smoke. No model is called; the sleep transport stands in for
+# container smoke. No model is called; the sleep transport stands in for
 # the backend so this smoke tests the substrate only -- that the qdisc is really
 # installed on this image, that the delay is really on the wire between
 # containers, and that a replayed round produces well-formed records behind a

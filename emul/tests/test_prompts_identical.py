@@ -1,4 +1,4 @@
-"""Rung 0: the emulated agent sends byte-identical prompts to the released harness.
+"""the emulated agent sends byte-identical prompts to the released harness.
 
 The load generator duplicates the harness's inline f-strings (it cannot import
 them: they are built inside run_one). This test drives the harness's own
