@@ -11,10 +11,29 @@ test_that("init_environment's default path is unchanged on every shipped graph",
   # The comparison is against the constructor's own output captured BEFORE the
   # two arguments existed, so this fails if the defaults drift by so much as a
   # column order. Every experiment calls this function.
+  #
+  # The agentic environment is the one entry whose numbers are a MEASUREMENT:
+  # its base latencies and its demand weights are read out of the recorded
+  # profile, so a re-recording moves them by design and a byte pin on them
+  # would pin the recording rather than the constructor. Those two vectors are
+  # dropped from its comparison here and pinned against the profile itself in
+  # test-exp9-agentic.R; every other field, and every other graph, stays byte
+  # identical.
+  drop_measured <- function(env) {
+    env$base_latency$base_ms             <- NULL
+    env$per_tier$base_ms                 <- NULL
+    env$demand_weights$demand_weight     <- NULL
+    env$graph$demand_weights$demand_weight <- NULL
+    env
+  }
   before <- readRDS(test_path("fixtures", "init-environment-default-path.rds"))
   for (g in names(before)) {
-    expect_identical(init_environment(build_dependency_graph(g), "medium", 8L, g),
-                     before[[g]])
+    got <- init_environment(build_dependency_graph(g), "medium", 8L, g)
+    if (g == "agentic") {
+      expect_identical(drop_measured(got), drop_measured(before[[g]]))
+    } else {
+      expect_identical(got, before[[g]])
+    }
   }
 })
 

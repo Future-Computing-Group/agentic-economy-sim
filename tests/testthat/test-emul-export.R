@@ -27,7 +27,10 @@ test_that("export_env_json writes every field the testbed consumes", {
                list(device = 200, edge = 300, cloud = 500))
   expect_equal(spec$demand_weight[c("device", "edge", "cloud")],
                as.list(agentic_demand_weights()))
-  expect_equal(spec$deadlines, c(4200L, 5000L, 5900L))
+  # Computed from the rule, not typed: the agentic deadlines are rescaled
+  # off the profile's own measured critical path, so a re-recording moves
+  # them and a literal would pin the recording.
+  expect_equal(spec$deadlines, agentic_deadlines())
   expect_equal(unlist(spec$base_ms[c("device", "edge", "cloud")]),
                agentic_base_latency())
 })

@@ -48,14 +48,21 @@ test_that("the agentic environment carries the measured base latencies", {
   expect_equal(sp$base_latency$base_ms, c(5, 15, 50))
 })
 
-test_that("the agentic deadline rule reproduces 4200, 5000, 5900", {
+test_that("the agentic deadline rule rounds the multipliers times the critical path", {
   # deadlines = round_to_100(c(1.25, 1.5, 1.75) * D_bar), D_bar the zero-queue
-  # critical path at the measured latencies (3350.5 ms).
-  expect_equal(agentic_deadlines(), c(4200L, 5000L, 5900L))
+  # critical path at the measured latencies. The expectation is computed from
+  # the profile rather than typed as three integers: the profile is a
+  # recording, so a re-run moves D_bar and a literal would pin the recording
+  # instead of the rule it is read through.
+  d_bar <- critical_path_ms(build_dependency_graph("agentic"),
+                            agentic_base_latency())
+  expect_equal(agentic_deadlines(),
+               as.integer(round(c(1.25, 1.5, 1.75) * d_bar / 100) * 100))
   # D_bar pinned to the measurement, not to a rounded literal: the agentic DAG
   # runs its two edge tools in parallel, so its critical path visits exactly one
-  # tier of each kind and is the sum of the three measured stage latencies
-  # (3350.5 ms). A literal at relative tolerance would tolerate a 0.33 ms drift.
+  # tier of each kind and is the sum of the three measured stage latencies.
+  # A rounded literal at relative tolerance would tolerate a drift of
+  # several ms in the measurement this is read against.
   expect_equal(critical_path_ms(build_dependency_graph("agentic"),
                                 agentic_base_latency()),
                sum(agentic_base_latency()))
@@ -64,8 +71,9 @@ test_that("the agentic deadline rule reproduces 4200, 5000, 5900", {
 test_that("the agentic value-decay rate holds the value surviving the critical path", {
   # Same rescaling rule as the deadlines, same invariant: the share of a task's
   # value that survives its own environment's zero-queue critical path. Without
-  # it the nominal 0.005 per ms leaves 5.3e-08 of the value of a 3350.5 ms task
-  # and the agentic market clears nothing at all.
+  # it the nominal 0.005 per ms leaves a millionth of the value of a task
+  # whose pipeline runs for seconds, and the agentic market clears nothing
+  # at all.
   d_agentic <- critical_path_ms(build_dependency_graph("agentic"),
                                 agentic_base_latency())
   d_nominal <- critical_path_ms(build_dependency_graph("sp"),

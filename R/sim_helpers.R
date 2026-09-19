@@ -228,16 +228,17 @@ agentic_demand_weights <- function(path = agentic_profile_path()) {
 #'   D_bar     = critical_path_ms(agentic graph, measured base latencies)
 #'   deadlines = round_to_100(multipliers * D_bar)
 #'
-#' D_bar is 3350.5 ms, giving 4200, 5000 and 5900 ms. The multipliers are a
+#' D_bar is read from the recording rather than typed, so the deadline set
+#' follows a re-recording instead of pinning one. The multipliers are a
 #' measurement-design choice, placed against the band realised latency can
 #' occupy rather than against any outcome: the queueing term is capped at 500 ms
 #' per tier and the agentic critical path visits three tiers, so latency lives in
-#' [D_bar, D_bar + 1500] before execution noise of sd = 0.1 * critical path.
-#' 4200 ms is inside that band and is missed once queueing bites, 5000 ms sits at
-#' its top edge, and 5900 ms is above it by more than two standard deviations. A
-#' deadline set entirely above the band would make the drop rate identically zero
-#' and the experiment vacuous; one entirely below it would make it identically
-#' one.
+#' [D_bar, D_bar + 1500] before execution noise of sd = 0.1 * critical path. The
+#' lowest multiplier sits inside that band and is missed once queueing bites,
+#' the middle one at its top edge, and the highest above it by more than two
+#' standard deviations. A deadline set entirely above the band would make the
+#' drop rate identically zero and the experiment vacuous; one entirely below it
+#' would make it identically one.
 #'
 #' @param multipliers Multiples of the zero-queue critical path.
 #' @param path        Path to the measured profile.
@@ -255,10 +256,11 @@ agentic_deadlines <- function(multipliers = c(1.25, 1.5, 1.75),
 #' V = v_base * exp(-lambda_l * latency). The nominal 0.005 per ms belongs to
 #' the nominal environments, whose zero-queue critical path is 135 ms: it says
 #' that about half a task's value survives its own pipeline. Applied unchanged
-#' to a workload whose critical path is 3350.5 ms it leaves 5e-8 of that value,
-#' so no task has positive surplus against the reserve price and the market
-#' clears nothing at all: measured over 3 seeds at N = 200, clearing fraction
-#' 0.000, welfare 0.000 and VCG payments 0.000 on both arms at both loads.
+#' to a workload whose critical path is measured in seconds it leaves a
+#' millionth of that value, so no task has positive surplus against the reserve
+#' price and the market clears nothing at all: measured over 3 seeds at
+#' N = 200, clearing fraction 0.000, welfare 0.000 and VCG payments 0.000 on
+#' both arms at both loads.
 #'
 #' It is therefore rescaled by the same rule as the deadlines and to the same
 #' invariant: the share of a task's value surviving its own environment's
