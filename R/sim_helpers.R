@@ -462,6 +462,22 @@ generate_tasks <- function(agent_row, env, round, deadlines = c(500L, 750L, 1000
 #'                     by tier.
 #' @return Scalar critical-path latency (ms).
 critical_path_ms <- function(graph, tier_latency) {
+  dist <- .longest_path_dist(graph, tier_latency)
+  max(dist[is.finite(dist)])
+}
+
+#' Longest source-to-node distance over the DAG, one entry per node.
+#'
+#' The traversal critical_path_ms has always run, extracted so that the same
+#' topological pass answers both questions: the scalar critical path, and the
+#' per-leaf path the per-token latency model needs. Running it twice would cost
+#' a second pass per leaf for the same numbers.
+#'
+#' @param graph        DAG object (nodes, edges).
+#' @param tier_latency Named numeric vector of per-tier latencies (ms).
+#' @return Named numeric vector of longest source-to-node distance, by node;
+#'   -Inf at a node no source reaches.
+.longest_path_dist <- function(graph, tier_latency) {
   nodes_df <- graph$nodes %>%
     mutate(node_latency = as.numeric(tier_latency[tier]))
   edges_df <- graph$edges
@@ -505,7 +521,23 @@ critical_path_ms <- function(graph, tier_latency) {
     }
   }
 
-  max(dist[is.finite(dist)])
+  dist
+}
+
+#' Longest source-to-leaf distance, one entry per leaf.
+#'
+#' The per-leaf sibling of critical_path_ms. Where the resources are the
+#' service NODES of a dependency graph, a task destined for one leaf waits on
+#' that leaf's own ancestors and on nothing else, so one round-level scalar
+#' would charge every leaf the slowest path in the instance and erase the
+#' structure the leaf set carries.
+#'
+#' @param graph        DAG object (nodes, edges).
+#' @param node_latency Named numeric vector of per-node latencies (ms).
+#' @param leaves       Character vector of leaf nodes.
+#' @return Named numeric vector of per-leaf end-to-end latency (ms).
+critical_path_to_leaves <- function(graph, node_latency, leaves) {
+  .longest_path_dist(graph, node_latency)[leaves]
 }
 
 
@@ -587,13 +619,29 @@ execute_allocation <- function(allocation, env, efficiency_factor = NULL,
     )
 
   # ---- 2-3. Critical path on the DAG, at the queued per-tier latencies ----
-  critical_latency <- critical_path_ms(
-    env$graph, setNames(per_tier$tier_latency, per_tier$tier)
-  )
+  # One path per round where the resources are tiers, one path per LEAF where
+  # they are the service nodes of a dependency graph: a task destined for a
+  # leaf waits on that leaf's own ancestors, and the round's slowest path
+  # belongs to whichever leaf sits under the busiest node. The scalar branch
+  # is what every per-tier driver takes and is untouched.
+  #
+  # Integrator encapsulation/protocol-translation overhead (Exp.12) is an
+  # additive latency on the encapsulated path and is charged either way.
+  node_latency <- setNames(per_tier$tier_latency, per_tier$tier)
+  per_leaf <- !is.null(env$spec) && "recipe" %in% names(allocation)
 
-  # Integrator encapsulation/protocol-translation overhead (Exp.12):
-  # an additive latency charged on the encapsulated (hybrid) path.
-  critical_latency <- critical_latency + enc_overhead_ms
+  if (per_leaf) {
+    leaf_ms <- critical_path_to_leaves(env$graph, node_latency,
+                                       leaf_set(env$spec)) + enc_overhead_ms
+    # A recipe label names one leaf under unit demand and a leaf pair under
+    # bundle demand; a bundle's task is done when its slowest leaf is.
+    critical_latency <- vapply(
+      strsplit(as.character(allocation$recipe), "+", fixed = TRUE),
+      function(s) max(leaf_ms[s]), numeric(1))
+  } else {
+    critical_latency <- critical_path_ms(env$graph, node_latency) +
+      enc_overhead_ms
+  }
 
   # ---- 4. Per-task latency with Gaussian noise (CV = 10%) ----
   allocation %>%
@@ -695,6 +743,50 @@ compute_utilisation_per_tier <- function(env, n_tasks_generated,
 }
 
 
+#' Per-node utilisation of a set of tasks carrying recipes.
+#'
+#' The node-indexed sibling of compute_utilisation_per_tier. The per-tier
+#' function multiplies one mix-average weight by a task COUNT, which is the
+#' right quantity when every task demands the same bundle and the wrong one
+#' once tasks differ in which nodes they touch: a round of l1 tokens and a
+#' round of l4 tokens have the same count and load disjoint edge nodes. The
+#' demand here is the column sum of the round's own recipe matrix.
+#'
+#' @param env   Environment list carrying node-indexed capacities and recipes.
+#' @param tasks Tibble of tasks with a `recipe` column.
+#' @return A tibble with columns: tier (the node), util.
+compute_utilisation_per_node <- function(env, tasks) {
+  cap <- tier_capacities(env)
+  if (nrow(tasks) == 0L) return(tibble(tier = cap$tier, util = 0))
+  used <- colSums(task_recipes(tasks, env))
+  tibble(tier = cap$tier,
+         util = as.numeric(used[cap$tier]) / pmax(cap$capacity, 1))
+}
+
+
+#' Bid-time congestion signal per leaf: the mean utilisation of its ancestors.
+#'
+#' A mean and not a sum. estimate_latency saturates its signal at util_cap = 1
+#' (R/sim_market.R), so a path sum over three or five node utilisations would
+#' sit on the cap in every contended round and erase the very treatment the
+#' per-leaf signal exists to carry. The mean is in the same units as the
+#' per-tier mean it replaces, so the congestion calibration carries over, and
+#' it differs by leaf because the ancestor sets do.
+#'
+#' @param prev_util Previous round's per-node utilisation (tier, util), or NULL
+#'                  in the opening round.
+#' @param anc       Ancestor-indicator matrix, leaves by nodes.
+#' @return Named numeric vector, one entry per leaf.
+leaf_util_hat <- function(prev_util, anc) {
+  if (is.null(prev_util)) {
+    return(setNames(rep(0, nrow(anc)), rownames(anc)))
+  }
+  u <- prev_util$util[match(colnames(anc), prev_util$tier)]
+  u[is.na(u)] <- 0
+  setNames(as.numeric(anc %*% u) / rowSums(anc), rownames(anc))
+}
+
+
 # ===========================================================================
 # Utility functions (shared across experiments)
 # ===========================================================================
@@ -737,4 +829,19 @@ base_latency_for_bids <- function(env) {
               "base_ms" %in% names(env$per_tier))
   critical_path_ms(env$graph,
                    setNames(env$per_tier$base_ms, env$per_tier$tier))
+}
+
+#' The zero-queue critical path of each leaf, for bid valuation.
+#'
+#' The per-leaf sibling of base_latency_for_bids, on the same definition: the
+#' end-to-end latency a task destined for that leaf would see at the per-node
+#' base latencies, before any queueing. The scalar function keeps every one of
+#' its call sites.
+#'
+#' @param env Environment list carrying an instance spec.
+#' @return Named numeric vector of per-leaf base latency (ms).
+base_latency_per_leaf <- function(env) {
+  critical_path_to_leaves(env$graph,
+                          setNames(env$per_tier$base_ms, env$per_tier$tier),
+                          leaf_set(env$spec))
 }

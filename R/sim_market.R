@@ -266,9 +266,14 @@ init_tier_prices <- function(env, p0 = 0.1) {
 
 #' Compute expected value for each task (latency-aware, success-discounted).
 #'
+#' Both `util_hat` and `base_latency` take either one number for the round or
+#' one per task. estimate_latency is elementwise already, so the per-task form
+#' is a vector of latency estimates and each row is valued at its own; under
+#' scalar arguments every expression returns exactly what it always returned.
+#'
 #' @param tasks_all    Tibble of tasks.
-#' @param util_hat     Current utilisation estimate.
-#' @param base_latency Base latency for bidding estimate.
+#' @param util_hat     Utilisation estimate: one scalar, or one per task.
+#' @param base_latency Base latency for bidding: one scalar, or one per task.
 #' @param success_model Online logistic success model.
 #' @param alpha        Congestion sensitivity.
 #' @param p            Congestion exponent.
@@ -284,7 +289,8 @@ task_expected_value <- function(tasks_all, util_hat, base_latency, success_model
                             alpha = alpha, p = p)
 
   v_hat <- purrr::map_dbl(seq_len(nrow(tasks_all)), function(i) {
-    value_latency_aware(tasks_all[i, , drop = FALSE], latency_ms = L_hat,
+    value_latency_aware(tasks_all[i, , drop = FALSE],
+                        latency_ms = if (length(L_hat) == 1L) L_hat else L_hat[i],
                         lambda_l_default = lambda_l_default, salvage = salvage)
   })
 
