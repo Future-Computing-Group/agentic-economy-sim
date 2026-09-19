@@ -10,7 +10,7 @@ import unittest
 import _ctx
 import probe_concurrency as probe
 
-# The rung-2 probe's own per-call medians, in ms. The backend serialises: at
+# The smoke probe's own per-call medians, in ms. The backend serialises: at
 # k = 2 a call already costs half again as much as at k = 1.
 MEASURED = {"1": {"k": 1, "median_ms": 552.2201061248779},
             "2": {"k": 2, "median_ms": 815.8094882965088},

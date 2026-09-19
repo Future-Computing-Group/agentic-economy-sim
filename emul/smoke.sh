@@ -1,6 +1,6 @@
 #!/bin/bash
 # Rung 1: container smoke. No model is called; the sleep transport stands in for
-# the backend so this rung tests the substrate only -- that the qdisc is really
+# the backend so this smoke tests the substrate only -- that the qdisc is really
 # installed on this image, that the delay is really on the wire between
 # containers, and that a replayed round produces well-formed records behind a
 # barrier.
@@ -10,7 +10,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
 COMPOSE=(docker compose -f "$HERE/docker-compose.yaml")
-RUN_ID="${RUN_ID:-rung1-$(date -u +%H%M%S)}"
+RUN_ID="${RUN_ID:-smoke-$(date -u +%H%M%S)}"
 OUT_ROOT="${EMUL_RUNS_DIR:-$(dirname "$REPO")/runs/emulation}"
 OUT_DIR="$OUT_ROOT/$(date -u +%Y-%m-%d)-$RUN_ID"
 # The RTT check is evidence that the emulated delay is on the path between

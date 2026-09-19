@@ -15,7 +15,7 @@ T_KILL = 50.0
 
 class TestDecompose(unittest.TestCase):
     def setUp(self):
-        self.recs = decompose.load_records(_ctx.FIXTURES / "stage_records_rung2.jsonl")
+        self.recs = decompose.load_records(_ctx.FIXTURES / "stage_records_sample.jsonl")
         self.pre, self.post = decompose.split_at(self.recs, T_KILL)
 
     def test_the_fixture_splits_at_the_kill(self):

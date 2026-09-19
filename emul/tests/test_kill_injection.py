@@ -2,7 +2,7 @@
 
 The failure overlay pins `restart: "no"`, so the kill is permanent; what has to
 be right here is that it happens once, at the declared round, before that round
-is issued, and that the run records it. The kill itself is stubbed: this rung
+is issued, and that the run records it. The kill itself is stubbed: this smoke
 tests the generator's decision, not Docker's.
 """
 import json
@@ -16,7 +16,7 @@ import test_round_barrier
 
 
 class KillHarness(unittest.TestCase):
-    """A three-tier stub stack under the sleep transport, as rung 0 uses."""
+    """A three-tier stub stack under the sleep transport, as the smoke uses."""
 
     def setUp(self):
         self.helper = test_round_barrier.TestRoundBarrier("test_the_straggler_actually_straggled")
