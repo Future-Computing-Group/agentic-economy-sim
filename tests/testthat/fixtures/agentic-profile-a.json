@@ -1,0 +1,92 @@
+{
+  "model": "fixture-model",
+  "host": "http://localhost:11434",
+  "pattern": "a",
+  "n_tasks": 4,
+  "structure": "fixture",
+  "response_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "graph": {
+    "nodes": [
+      {
+        "id": "plan",
+        "tier": "device"
+      },
+      {
+        "id": "tool0",
+        "tier": "edge"
+      },
+      {
+        "id": "tool1",
+        "tier": "edge"
+      },
+      {
+        "id": "aggregate",
+        "tier": "cloud"
+      }
+    ],
+    "edges": [
+      {
+        "from": "plan",
+        "to": "tool0"
+      },
+      {
+        "from": "plan",
+        "to": "tool1"
+      },
+      {
+        "from": "tool0",
+        "to": "aggregate"
+      },
+      {
+        "from": "tool1",
+        "to": "aggregate"
+      }
+    ],
+    "leaves": [
+      "aggregate"
+    ]
+  },
+  "tiers": {
+    "device": {
+      "mean_tokens_per_task": 100,
+      "mean_latency_ms": 100.0,
+      "demand_weight": 1.0
+    },
+    "edge": {
+      "mean_tokens_per_task": 200,
+      "mean_latency_ms": 200.0,
+      "demand_weight": 2.0
+    },
+    "cloud": {
+      "mean_tokens_per_task": 300,
+      "mean_latency_ms": 400.0,
+      "demand_weight": 3.0
+    }
+  },
+  "aggregate_stages": {
+    "plan": {
+      "tier": "device",
+      "mean_tokens_per_task": 100,
+      "mean_latency_ms": 100.0,
+      "demand_weight": 1.0
+    },
+    "tool0": {
+      "tier": "edge",
+      "mean_tokens_per_task": 100,
+      "mean_latency_ms": 200.0,
+      "demand_weight": 1.0
+    },
+    "tool1": {
+      "tier": "edge",
+      "mean_tokens_per_task": 200,
+      "mean_latency_ms": 200.0,
+      "demand_weight": 2.0
+    },
+    "aggregate": {
+      "tier": "cloud",
+      "mean_tokens_per_task": 300,
+      "mean_latency_ms": 400.0,
+      "demand_weight": 3.0
+    }
+  }
+}

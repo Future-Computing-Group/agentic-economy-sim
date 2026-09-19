@@ -113,7 +113,8 @@ task_bundle <- function(env) {
 task_recipes <- function(tasks_all, env) {
   bundle <- task_bundle(env)
   n      <- nrow(tasks_all)
-  A <- matrix(bundle$demand, nrow = n, ncol = nrow(bundle), byrow = TRUE,
+  A <- matrix(if (n == 0L) numeric(0) else bundle$demand,
+              nrow = n, ncol = nrow(bundle), byrow = TRUE,
               dimnames = list(NULL, bundle$tier))
   if (n == 0L || is.null(env$recipes) || !("recipe" %in% names(tasks_all))) return(A)
 
@@ -772,11 +773,12 @@ dsic_certificate <- function(env, tasks_all) {
   # describe and that is exactly what can make the region stop being one.
   anc <- env$anc %||% ancestor_matrix(env$spec)
   cap <- tier_capacities(env)
-  C   <- setNames(cap$capacity, cap$tier)[colnames(anc)] / env$spec$weight
+  w   <- token_weight_of(env$spec, colnames(anc))
+  C   <- setNames(cap$capacity, cap$tier)[colnames(anc)] / w
   cert <- polymatroid_certificate(leaf_rank(anc, C), rownames(anc))
 
   A <- task_recipes(tasks_all, env)[, colnames(anc), drop = FALSE]
-  unit_rows <- env$spec$weight * anc
+  unit_rows <- sweep(anc, 2, w, "*")
   unit <- nrow(A) == 0L || all(apply(A, 1, function(r)
     any(apply(unit_rows, 1, function(u)
       isTRUE(all.equal(unname(r), unname(u)))))))
@@ -898,8 +900,9 @@ posted_price_anchor <- function(env, k = 1) {
 #' @param w   Token weight.
 #' @return Named numeric vector, one posted price per leaf.
 posted_price_anchor_per_leaf <- function(env, anc, k = 1,
-                                         w = env$spec$weight) {
-  k * (env$reserve_price %||% 0) * w * rowSums(anc)
+                                         w = token_weight_of(env$spec,
+                                                             colnames(anc))) {
+  setNames(k * (env$reserve_price %||% 0) * as.numeric(anc %*% w), rownames(anc))
 }
 
 #' Posted-price allocation: a static price instead of a discovered one.

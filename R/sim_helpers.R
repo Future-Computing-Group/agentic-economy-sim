@@ -137,31 +137,20 @@ build_dependency_graph <- function(graph_type) {
     )
 
   } else if (graph_type == "agentic") {
-    # REAL agentic workload (Exp.9). Structure and per-tier demand
-    # weights are MEASURED from a real multi-step LLM tool-use agent
-    # (plan -> 2 parallel tool calls -> aggregate) run on a local model;
-    # see agentic/run_agent_workload.py + agentic/agentic_profile.json for
-    # provenance and reproduction. The DAG is series-parallel (the canonical
-    # tool-using agent pattern); demand weights are read from the profile and
-    # are the measured token counts PER TASK per tier, normalised to the
-    # lightest tier (device/edge/cloud = 1.00/1.81/2.03 from mistral-7B: one
-    # planning call, two parallel tool calls whose tokens a task pays both of,
-    # one heavier synthesis).
-    nodes <- tibble(
-      node = c("plan", "tool0", "tool1", "aggregate"),
-      tier = c("device", "edge", "edge", "cloud")
-    )
-    edges <- tribble(
-      ~from,   ~to,
-      "plan",  "tool0",
-      "plan",  "tool1",
-      "tool0", "aggregate",
-      "tool1", "aggregate"
-    )
+    # The structure is READ from the recording's graph block, which is derived
+    # from the executed call sequence. Before that block existed the DAG was
+    # typed here and the measurement reached the simulator through three
+    # per-tier weights alone, so the recorded structure and the simulated one
+    # were two things that happened to agree. The typed graph stays as the
+    # fallback, so a profile without a block loads rather than failing
+    # silently on half a measurement.
+    recorded <- agentic_graph()
+    typed    <- agentic_typed_graph()
+    nodes <- if (is.null(recorded)) typed$nodes else recorded$nodes
+    edges <- if (is.null(recorded)) typed$edges else recorded$edges
     demand_weights <- tibble(
       tier = c("device", "edge", "cloud"),
-      demand_weight = unname(agentic_demand_weights())
-    )
+      demand_weight = unname(agentic_demand_weights()))
 
   } else {
     stop("Unknown graph_type: ", graph_type)
@@ -175,6 +164,57 @@ build_dependency_graph <- function(graph_type) {
 # Measured agentic workload profile
 # ===========================================================================
 
+#' The agent workload's DAG as it was typed before the recording carried one.
+#'
+#' Kept as the fallback of build_dependency_graph("agentic") and as nothing
+#' else: a profile with no graph block still loads, and the arm that loads it
+#' is reported as running on a typed structure rather than a measured one.
+#'
+#' @return A list of `nodes` (node, tier) and `edges` (from, to).
+agentic_typed_graph <- function() {
+  list(
+    nodes = tibble(node = c("plan", "tool0", "tool1", "aggregate"),
+                   tier = c("device", "edge", "edge", "cloud")),
+    edges = tribble(
+      ~from,   ~to,
+      "plan",  "tool0",
+      "plan",  "tool1",
+      "tool0", "aggregate",
+      "tool1", "aggregate"))
+}
+
+#' The graph a recording executed, read out of its profile.
+#'
+#' Nodes, edges and leaves as DATA. The block is derived from the parents each
+#' call recorded as it was made, so the structure the simulator runs is the
+#' structure the workload ran.
+#'
+#' @param path Path to a measured profile.
+#' @return A list of `nodes` (node, tier), `edges` (from, to) and `leaves`, or
+#'   NULL when the profile carries no graph block.
+agentic_graph <- function(path = agentic_profile_path()) {
+  g <- jsonlite::fromJSON(path)$graph
+  if (is.null(g)) return(NULL)
+  list(nodes  = tibble(node = as.character(g$nodes$id),
+                       tier = as.character(g$nodes$tier)),
+       edges  = tibble(from = as.character(g$edges$from),
+                       to   = as.character(g$edges$to)),
+       leaves = as.character(g$leaves))
+}
+
+#' Per-stage weights and latencies of a recording.
+#'
+#' @param path Path to a measured profile.
+#' @return A tibble of `node`, `tier`, `demand_weight`, `mean_latency_ms`.
+agentic_stages <- function(path = agentic_profile_path()) {
+  st <- jsonlite::fromJSON(path)$aggregate_stages
+  stopifnot("the profile carries no per-stage aggregate" = !is.null(st))
+  tibble(node            = names(st),
+         tier            = vapply(st, function(x) x$tier, character(1)),
+         demand_weight   = vapply(st, function(x) x$demand_weight, numeric(1)),
+         mean_latency_ms = vapply(st, function(x) x$mean_latency_ms, numeric(1)))
+}
+
 #' Path to the measured agentic workload profile.
 #'
 #' The pipeline tracks this file as a `format = "file"` target, so a regenerated
@@ -183,6 +223,20 @@ build_dependency_graph <- function(graph_type) {
 #' @return Absolute path to agentic/agentic_profile.json.
 agentic_profile_path <- function() {
   here::here("agentic", "agentic_profile.json")
+}
+
+#' Path to the second measured pattern's profile.
+#'
+#' @return Absolute path to agentic/agentic_profile_b.json.
+agentic_profile_path_b <- function() {
+  here::here("agentic", "agentic_profile_b.json")
+}
+
+#' Both measured patterns, in the order the union is built from.
+#'
+#' @return Character vector of two absolute paths.
+agentic_profile_paths <- function() {
+  c(agentic_profile_path(), agentic_profile_path_b())
 }
 
 #' Per-tier mean stage latency (ms) of the real agentic workload.

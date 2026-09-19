@@ -95,19 +95,45 @@ leaf_instance_specs <- function(size = c("small", "scale")) {
   lapply(specs, function(e) list(nodes = nodes, edges = e, weight = weight))
 }
 
+#' The capacity units one throughput token consumes at each node.
+#'
+#' `spec$weight` is one number on the synthetic instances, where a token is a
+#' token wherever it goes. A MEASURED instance carries one weight per node,
+#' because a recorded stage's token count is its own: this is what reconciles
+#' the two, so every caller reads a vector named by node and none of them has
+#' to know which kind of spec it was handed.
+#'
+#' @param spec  An instance spec.
+#' @param nodes Nodes to report, in the order wanted.
+#' @return Named numeric vector of per-node token weights.
+token_weight_of <- function(spec, nodes = spec$nodes$node) {
+  w <- spec$weight
+  if (length(w) == 1L) {
+    return(setNames(rep(as.numeric(w), length(nodes)), nodes))
+  }
+  setNames(as.numeric(w[nodes]), nodes)
+}
+
 #' Node capacities in throughput tokens.
 #'
 #' @param spec An instance spec.
 #' @return Named numeric vector of token capacities, named by node.
 token_capacity <- function(spec) {
-  setNames(spec$nodes$capacity / spec$weight, spec$nodes$node)
+  setNames(spec$nodes$capacity / token_weight_of(spec), spec$nodes$node)
 }
 
 #' Per-node base processing delay, in ms, named by node.
 #'
+#' A spec whose nodes carry their own `base_ms` column is a MEASURED instance
+#' and its delays are the recording's; the synthetic instances resolve theirs
+#' from the physical tier a node sits in.
+#'
 #' @param spec An instance spec.
 #' @return Named numeric vector, named by node.
 leaf_base_ms <- function(spec) {
+  if ("base_ms" %in% names(spec$nodes)) {
+    return(setNames(as.numeric(spec$nodes$base_ms), spec$nodes$node))
+  }
   setNames(unname(phys_base_ms()[spec$nodes$phys]), spec$nodes$node)
 }
 
@@ -124,7 +150,8 @@ leaf_base_ms <- function(spec) {
 leaf_demand_weights <- function(spec) {
   anc <- ancestor_matrix(spec)
   tibble(tier = colnames(anc),
-         demand_weight = spec$weight * unname(colMeans(anc)))
+         demand_weight = unname(token_weight_of(spec, colnames(anc)) *
+                                  colMeans(anc)))
 }
 
 #' A graph in build_dependency_graph's shape, with resources indexed by NODE.
@@ -573,11 +600,12 @@ leaf_recipes <- function(spec, demand = c("unit", "bundle")) {
   demand <- match.arg(demand)
   anc <- ancestor_matrix(spec)
   L   <- rownames(anc)
+  w   <- token_weight_of(spec, colnames(anc))
   if (demand == "unit") {
-    return(setNames(lapply(L, function(l) spec$weight * anc[l, ]), L))
+    return(setNames(lapply(L, function(l) w * anc[l, ]), L))
   }
   pairs <- utils::combn(L, 2, simplify = FALSE)
-  setNames(lapply(pairs, function(p) spec$weight * (anc[p[1], ] + anc[p[2], ])),
+  setNames(lapply(pairs, function(p) w * (anc[p[1], ] + anc[p[2], ])),
            vapply(pairs, paste, character(1), collapse = "+"))
 }
 
@@ -675,6 +703,8 @@ matched_controls <- function(spec) {
 contract_cluster <- function(spec, cluster, advertise = c("inner", "maxflow"),
                              name = "J", scalar = NULL) {
   advertise <- match.arg(advertise)
+  stopifnot("a contraction needs one token weight for the whole instance" =
+              length(spec$weight) == 1L)
   anc  <- ancestor_matrix(spec)
   Ctok <- token_capacity(spec)
   L_J  <- rownames(anc)[rowSums(anc[, cluster, drop = FALSE]) > 0]

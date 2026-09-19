@@ -1,0 +1,107 @@
+{
+  "model": "fixture-model",
+  "host": "http://localhost:11434",
+  "pattern": "b",
+  "n_tasks": 4,
+  "structure": "fixture",
+  "response_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "graph": {
+    "nodes": [
+      {
+        "id": "plan_b",
+        "tier": "device"
+      },
+      {
+        "id": "retrieve",
+        "tier": "edge"
+      },
+      {
+        "id": "tool1",
+        "tier": "edge"
+      },
+      {
+        "id": "summary",
+        "tier": "cloud"
+      },
+      {
+        "id": "citations",
+        "tier": "cloud"
+      }
+    ],
+    "edges": [
+      {
+        "from": "plan_b",
+        "to": "retrieve"
+      },
+      {
+        "from": "plan_b",
+        "to": "tool1"
+      },
+      {
+        "from": "retrieve",
+        "to": "summary"
+      },
+      {
+        "from": "tool1",
+        "to": "summary"
+      },
+      {
+        "from": "retrieve",
+        "to": "citations"
+      }
+    ],
+    "leaves": [
+      "summary",
+      "citations"
+    ]
+  },
+  "tiers": {
+    "device": {
+      "mean_tokens_per_task": 100,
+      "mean_latency_ms": 100.0,
+      "demand_weight": 1.0
+    },
+    "edge": {
+      "mean_tokens_per_task": 200,
+      "mean_latency_ms": 200.0,
+      "demand_weight": 2.0
+    },
+    "cloud": {
+      "mean_tokens_per_task": 300,
+      "mean_latency_ms": 400.0,
+      "demand_weight": 3.0
+    }
+  },
+  "aggregate_stages": {
+    "plan_b": {
+      "tier": "device",
+      "mean_tokens_per_task": 100,
+      "mean_latency_ms": 100.0,
+      "demand_weight": 1.0
+    },
+    "retrieve": {
+      "tier": "edge",
+      "mean_tokens_per_task": 200,
+      "mean_latency_ms": 200.0,
+      "demand_weight": 2.0
+    },
+    "tool1": {
+      "tier": "edge",
+      "mean_tokens_per_task": 200,
+      "mean_latency_ms": 200.0,
+      "demand_weight": 2.0
+    },
+    "summary": {
+      "tier": "cloud",
+      "mean_tokens_per_task": 300,
+      "mean_latency_ms": 400.0,
+      "demand_weight": 3.0
+    },
+    "citations": {
+      "tier": "cloud",
+      "mean_tokens_per_task": 300,
+      "mean_latency_ms": 400.0,
+      "demand_weight": 3.0
+    }
+  }
+}

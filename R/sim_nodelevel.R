@@ -120,7 +120,8 @@ node_env <- function(graph_type, load_level, N, leaf_mix = "uniform",
                      spec = node_instance(graph_type)) {
   anc    <- ancestor_matrix(spec)
   shares <- node_leaf_shares(leaf_mix, rownames(anc))
-  graph  <- build_leaf_graph(spec, node_demand_weights(anc, shares, spec$weight))
+  w      <- token_weight_of(spec, colnames(anc))
+  graph  <- build_leaf_graph(spec, node_demand_weights(anc, shares, w))
 
   env <- init_environment(graph, load_level, n_agents = N, graph_type = graph_type,
                           capacities   = leaf_capacities(spec),
@@ -138,7 +139,7 @@ node_env <- function(graph_type, load_level, N, leaf_mix = "uniform",
   for (l in rownames(anc)) {
     stopifnot("a unit recipe is not one leaf's ancestor indicator" =
                 isTRUE(all.equal(unname(env$recipes[[l]]),
-                                 unname(spec$weight * anc[l, ]))))
+                                 unname(w * anc[l, ]))))
   }
   env
 }
@@ -273,6 +274,91 @@ node_rho_bottleneck <- function(graph_type, n_agents, load_level = "high",
                  env = node_run_env(graph_type, load_level, n_agents, leaf_mix))
 }
 
+# ===========================================================================
+# The measured workload as a node-level instance
+# ===========================================================================
+
+#' The union of one or more recordings, as an instance spec.
+#'
+#' Nodes, arcs, per-stage token weights and per-stage base delays all come out
+#' of the recordings; nothing here is drawn. Whether the union's leaf-block
+#' family is laminar is therefore a MEASUREMENT: a run whose stages degenerate
+#' produces a different graph and the certificate reports it.
+#'
+#' Capacity splits each physical tier's total across the stages that sit in
+#' it, so the tier totals are preserved exactly, with one exception. A planner
+#' stage is an ancestor of every leaf of its own pattern, so giving it a share
+#' would make it bind on every subset, flatten the rank function and return
+#' the arm to the uniform-matroid case the rebuild exists to leave behind. The
+#' planners carry their whole tier and the stages that do the work are what
+#' binds.
+#'
+#' A stage recorded by more than one pattern takes the mean of its weights and
+#' delays; it is one service and the patterns are two samples of it.
+#'
+#' @param paths         Paths to measured profiles.
+#' @param tier_capacity Named numeric vector of per-tier capacity totals.
+#' @param planner_tier  The tier whose stages are given the whole tier total.
+#' @return An instance spec with a per-node weight vector and base delays.
+agentic_union_spec <- function(paths,
+                               tier_capacity = c(device = 200, edge = 300,
+                                                 cloud = 500),
+                               planner_tier = "device") {
+  gs <- lapply(paths, agentic_graph)
+  stopifnot("a profile carries no graph block" =
+              !any(vapply(gs, is.null, logical(1))))
+  nodes <- dplyr::distinct(dplyr::bind_rows(lapply(gs, `[[`, "nodes")))
+  edges <- dplyr::distinct(dplyr::bind_rows(lapply(gs, `[[`, "edges")))
+
+  st <- dplyr::bind_rows(lapply(paths, agentic_stages)) %>%
+    dplyr::group_by(.data$node) %>%
+    dplyr::summarise(demand_weight   = mean(.data$demand_weight),
+                     mean_latency_ms = mean(.data$mean_latency_ms),
+                     .groups = "drop")
+  i <- match(nodes$node, st$node)
+  stopifnot("a recorded node has no stage aggregate" = !anyNA(i))
+
+  per_tier <- table(nodes$tier)
+  cap <- ifelse(nodes$tier == planner_tier,
+                unname(tier_capacity[nodes$tier]),
+                unname(tier_capacity[nodes$tier]) / as.numeric(per_tier[nodes$tier]))
+
+  list(nodes  = tibble(node = nodes$node, phys = nodes$tier, capacity = cap,
+                       base_ms = st$mean_latency_ms[i]),
+       edges  = edges,
+       weight = setNames(st$demand_weight[i], nodes$node))
+}
+
+#' The node-level environment of the measured workload.
+#'
+#' @param load_level One of "low", "medium", "high".
+#' @param N          Agent population.
+#' @param paths      Paths to the measured profiles the arm runs on.
+#' @param leaf_mix   Leaf-share mix; uniform over whatever leaves were
+#'                   recorded.
+#' @return An environment list.
+node_agentic_env <- function(load_level, N, paths = agentic_profile_paths(),
+                             leaf_mix = "uniform") {
+  node_env("agentic", load_level, N, leaf_mix,
+           spec = agentic_union_spec(paths))
+}
+
+#' Deadlines and value decay rescaled to a node-level agentic instance.
+#'
+#' The same rule the per-tier agentic environment is rescaled by, read off the
+#' instance's own slowest leaf rather than off one round-level critical path.
+#'
+#' @param spec        The instance spec.
+#' @param multipliers Multiples of the zero-queue critical path.
+#' @return A list of `deadlines` and `lambda_l`.
+node_agentic_constants <- function(spec, multipliers = c(1.25, 1.5, 1.75)) {
+  d_bar <- max(critical_path_to_leaves(build_leaf_graph(spec),
+                                       leaf_base_ms(spec), leaf_set(spec)))
+  list(deadlines = as.integer(round(multipliers * d_bar / 100) * 100),
+       lambda_l  = 0.005 * 135 / d_bar)
+}
+
+
 #' The instance spec at the environment's EFFECTIVE capacities.
 #'
 #' Capacity lives twice in an environment and a governance cap writes both
@@ -299,7 +385,8 @@ node_effective_spec <- function(env) {
 #'   column order.
 node_token_capacity <- function(env) {
   cap <- tier_capacities(env)
-  setNames(cap$capacity, cap$tier)[colnames(env$anc)] / env$spec$weight
+  setNames(cap$capacity, cap$tier)[colnames(env$anc)] /
+    token_weight_of(env$spec, colnames(env$anc))
 }
 
 #' The population at which the first node saturates under this cell's mix.
@@ -338,7 +425,7 @@ node_k_c <- function(env) {
 #' @return The environment, its leaf capacities lowered to the caps.
 apply_leaf_caps <- function(env, u) {
   if (is.null(u) || length(u) == 0L) return(env)
-  cap_units <- u * env$spec$weight
+  cap_units <- u * token_weight_of(env$spec, names(u))
   set <- function(df) dplyr::mutate(df, capacity = ifelse(
     tier %in% names(cap_units), pmin(capacity, cap_units[tier]), capacity))
   env$capacities <- set(env$capacities)
@@ -445,6 +532,8 @@ node_policy_caps <- function(policy, env, agents = NULL, providers = NULL,
 #' @return The environment, carrying the coupling.
 node_residency_coupling <- function(env, leaves = c("l2", "l3"), tokens = 50,
                                     name = "residency") {
+  stopifnot("a coupling needs one token weight for the whole instance" =
+              length(env$spec$weight) == 1L)
   w     <- env$spec$weight
   units <- tokens * w
   L     <- rownames(env$anc)
@@ -743,9 +832,9 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   full   <- subset_name(leaves, leaves)
   fr     <- flow_rank(node_effective_spec(env_true), env_true$anc)
   flow_full <- fr$value[[subset_name(leaves, leaves)]]
-  w      <- env_true$spec$weight
   cap_true <- setNames(tier_capacities(env_true)$capacity,
                        tier_capacities(env_true)$tier)
+  w      <- token_weight_of(env_true$spec, names(cap_true))
 
   # The certificate and the region constants are cached per BRANCH wherever the
   # effective region is constant across rounds, which is every policy level but
