@@ -697,13 +697,20 @@ update_trust <- function(agents, results_t, reward = 0.03, penalty = 0.08) {
 #' mean utilisation 1.66 and a drop rate of 1.00). Shared by the calibration
 #' sweep and the test that pins its outcome, so both read one definition.
 #'
+#' The environment is an optional argument rather than always rebuilt from a
+#' topology string: a node-indexed environment's busiest RESOURCE is a service
+#' node and its demand weights depend on the cell's leaf mix, neither of which
+#' a topology name can reconstruct. Without it the function is what it was.
+#'
 #' @param graph_type DAG topology.
 #' @param n_agents   Agent population.
 #' @param load_level One of "low", "medium", "high".
+#' @param env        Optional environment to read the ratio off directly.
 #' @return Scalar offered load.
-rho_bottleneck <- function(graph_type, n_agents, load_level = "high") {
-  env <- init_environment(build_dependency_graph(graph_type), load_level,
-                          n_agents = n_agents, graph_type = graph_type)
+rho_bottleneck <- function(graph_type, n_agents, load_level = "high",
+                           env = NULL) {
+  env <- env %||% init_environment(build_dependency_graph(graph_type), load_level,
+                                   n_agents = n_agents, graph_type = graph_type)
   ratio <- env$demand_weights %>%
     left_join(env$capacities, by = "tier") %>%
     mutate(ratio = demand_weight / capacity) %>%

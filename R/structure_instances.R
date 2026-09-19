@@ -313,6 +313,146 @@ leaf_rank <- function(anc, C) {
            vapply(subs, subset_name, character(1), L = L))
 }
 
+#' The smallest set of leaves whose deletion leaves the leaf-block family
+#' laminar.
+#'
+#' Empty on a family that is already laminar. Fixing these leaves' token counts
+#' leaves a laminar family on the survivors, hence a polymatroid, and that is
+#' what makes the outer scan of `lb_optimum` exact.
+#'
+#' # ponytail: ascending subset search over the leaves, 15 subsets at four
+#' # leaves. Above about ten leaves this wants a real crossing-pair analysis;
+#' # these instances do not have ten leaves.
+#'
+#' @param anc An ancestor-indicator matrix.
+#' @return Character vector of leaves, possibly empty.
+crossing_leaves <- function(anc) {
+  L <- rownames(anc)
+  for (k in 0:length(L)) {
+    for (s in utils::combn(L, k, simplify = FALSE)) {
+      if (leaf_blocks_laminar(anc[setdiff(L, s), , drop = FALSE])) return(s)
+    }
+  }
+  L
+}
+
+#' The tightest node capacity on a leaf's own path, in tokens.
+#'
+#' @param l   A leaf.
+#' @param anc An ancestor-indicator matrix.
+#' @param C   Named numeric vector of token capacities, in `anc`'s column order.
+#' @return Scalar upper bound on that leaf's token count.
+.leaf_cap <- function(l, anc, C) min(C[anc[l, ] > 0])
+
+#' Greedy over a pre-ranked pool of tokens against residual node capacities.
+#'
+#' The pool is already in descending value order and `P` carries its rows of
+#' the ancestor matrix, so the walk is one capacity test per token. On a
+#' laminar family this is Edmonds' greedy and it is the exact maximiser of a
+#' separable concave objective; `lb_optimum` is what makes the family laminar
+#' before calling it.
+#'
+#' @param pool Descending numeric vector of token marginal values.
+#' @param P    Matrix of ancestor-indicator rows, one row per pool entry.
+#' @param remaining Named numeric vector of residual node capacities.
+#' @return Total value admitted.
+.laminar_greedy <- function(pool, P, remaining) {
+  total <- 0
+  for (i in seq_along(pool)) {
+    need <- P[i, ]
+    if (all(need <= remaining)) {
+      remaining <- remaining - need
+      total     <- total + pool[[i]]
+    }
+  }
+  total
+}
+
+#' Exact optimum of a separable concave objective over the leaf-block region.
+#'
+#' Under unit demand an allocation is described by the leaf token counts and
+#' the objective is separable and concave in them: at leaf j take the n_j
+#' highest-valued tokens. Fixing the counts of the crossing leaves leaves a
+#' laminar family, hence a polymatroid, on which greedy over the merged
+#' marginals is exact; the outer scan is exhaustive over the fixed
+#' coordinates, so the maximum over the scan is the optimum.
+#'
+#' The free-leaf pool is built and sorted ONCE rather than per outer step: the
+#' crossing set does not move inside the scan, so neither does the pool.
+#'
+#' # ponytail: one capacity test per pooled token per outer step, 51 steps at
+#' # the evaluation capacities. If that bites, rank the pool once and select by
+#' # rank rather than re-walking it.
+#'
+#' @param marg Named list, one entry per leaf, each a DESCENDING vector of the
+#'   marginal values of successive tokens at that leaf.
+#' @param anc  An ancestor-indicator matrix.
+#' @param C    Named numeric vector of TOKEN capacities, named by node.
+#' @return Scalar optimum.
+lb_optimum <- function(marg, anc, C) {
+  L     <- rownames(anc)
+  Cv    <- C[colnames(anc)]
+  cross <- crossing_leaves(anc)
+  free  <- setdiff(L, cross)
+
+  pool <- unlist(lapply(free, function(l) {
+    v <- marg[[l]]
+    v <- v[is.finite(v) & v > 0]
+    setNames(v, rep(l, length(v)))
+  }))
+  if (is.null(pool)) pool <- numeric(0)
+  pool <- sort(pool, decreasing = TRUE)
+  P    <- anc[names(pool), , drop = FALSE]
+
+  if (length(cross) == 0L) return(.laminar_greedy(pool, P, Cv))
+
+  cs   <- lapply(cross, function(l) c(0, cumsum(marg[[l]])))
+  ks   <- lapply(seq_along(cross), function(i)
+    0:min(length(marg[[cross[i]]]), .leaf_cap(cross[i], anc, Cv)))
+  grid <- as.matrix(expand.grid(ks))
+
+  best <- -Inf
+  for (r in seq_len(nrow(grid))) {
+    k   <- grid[r, ]
+    rem <- Cv
+    val <- 0
+    for (i in seq_along(cross)) {
+      if (k[i] > 0) {
+        rem <- rem - k[i] * anc[cross[i], ]
+        val <- val + cs[[i]][k[i] + 1L]
+      }
+    }
+    if (any(rem < 0)) next
+    v <- val + .laminar_greedy(pool, P, rem)
+    if (v > best) best <- v
+  }
+  best
+}
+
+#' Leaf-block rank at scale, through the scan rather than the enumeration.
+#'
+#' rank(S) is the largest total token count supportable on S alone, which is
+#' `lb_optimum` at unit marginals capped by each leaf's own tightest node. It
+#' is the independent cross-check on `leaf_rank`: one enumeration under a cover
+#' bound and one scan over the crossing coordinate, in two coordinate systems.
+#'
+#' @param anc An ancestor-indicator matrix.
+#' @param C   Named numeric vector of TOKEN capacities, named by node.
+#' @return Named numeric vector, one entry per leaf subset, named by subset.
+lb_optimum_rank <- function(anc, C) {
+  L    <- rownames(anc)
+  Cv   <- C[colnames(anc)]
+  subs <- leaf_subsets(L)
+  setNames(
+    vapply(subs, function(s) {
+      if (length(s) == 0L) return(0)
+      marg <- setNames(lapply(L, function(l)
+        if (l %in% s) rep(1, .leaf_cap(l, anc, Cv)) else numeric(0)), L)
+      lb_optimum(marg, anc, Cv)
+    }, numeric(1)),
+    vapply(subs, subset_name, character(1), L = L))
+}
+
 #' Is a rank function a polymatroid: normalised, monotone, submodular?
 #'
 #' Pairwise submodularity -- adding two elements one at a time is never worse
