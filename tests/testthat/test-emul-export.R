@@ -26,7 +26,7 @@ test_that("export_env_json writes every field the testbed consumes", {
   expect_equal(spec$capacities[c("device", "edge", "cloud")],
                list(device = 200, edge = 300, cloud = 500))
   expect_equal(spec$demand_weight[c("device", "edge", "cloud")],
-               list(device = 1.11, edge = 1.0, cloud = 2.25))
+               as.list(agentic_demand_weights()))
   expect_equal(spec$deadlines, c(4200L, 5000L, 5900L))
   expect_equal(unlist(spec$base_ms[c("device", "edge", "cloud")]),
                agentic_base_latency())

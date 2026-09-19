@@ -5,7 +5,7 @@
 # Contents:
 #   - DAG construction (build_dependency_graph)
 #   - Measured agentic profile (agentic_profile_path, agentic_base_latency,
-#     agentic_deadlines, agentic_lambda_l)
+#     agentic_demand_weights, agentic_deadlines, agentic_lambda_l)
 #   - Environment and agent initialisation
 #   - Task generation
 #   - Critical path (critical_path_ms: longest path over the DAG)
@@ -142,9 +142,11 @@ build_dependency_graph <- function(graph_type) {
     # (plan -> 2 parallel tool calls -> aggregate) run on a local model;
     # see agentic/run_agent_workload.py + agentic/agentic_profile.json for
     # provenance and reproduction. The DAG is series-parallel (the canonical
-    # tool-using agent pattern); demand weights are the measured mean token
-    # counts per tier, normalised (device/edge/cloud = 1.11/1.0/2.25 from
-    # mistral-7B: plan light, parallel tools moderate, aggregate heaviest).
+    # tool-using agent pattern); demand weights are read from the profile and
+    # are the measured token counts PER TASK per tier, normalised to the
+    # lightest tier (device/edge/cloud = 1.00/1.81/2.03 from mistral-7B: one
+    # planning call, two parallel tool calls whose tokens a task pays both of,
+    # one heavier synthesis).
     nodes <- tibble(
       node = c("plan", "tool0", "tool1", "aggregate"),
       tier = c("device", "edge", "edge", "cloud")
@@ -158,7 +160,7 @@ build_dependency_graph <- function(graph_type) {
     )
     demand_weights <- tibble(
       tier = c("device", "edge", "cloud"),
-      demand_weight = c(1.11, 1.0, 2.25)   # measured; see agentic_profile.json
+      demand_weight = unname(agentic_demand_weights())
     )
 
   } else {
@@ -196,6 +198,25 @@ agentic_base_latency <- function(path = agentic_profile_path()) {
   tiers <- jsonlite::fromJSON(path)$tiers
   vapply(c("device", "edge", "cloud"),
          function(tr) tiers[[tr]]$mean_latency_ms, numeric(1))
+}
+
+#' Per-tier demand weight of the real agentic workload.
+#'
+#' Read from agentic/agentic_profile.json for the same reason as the base
+#' latencies: the weights the simulator charges and the weights the measurement
+#' produced are one number, not two that happen to agree.
+#'
+#' The weight is what ONE TASK demands of one tier, which is what the market
+#' charges per task bundle. A task visits the edge tier twice, its two tool
+#' calls being parallel branches of the same task, so its edge demand is their
+#' summed tokens: the profile's per-call mean is not the per-task quantity.
+#'
+#' @param path Path to the measured profile.
+#' @return Named numeric vector (device, edge, cloud) of demand weights.
+agentic_demand_weights <- function(path = agentic_profile_path()) {
+  tiers <- jsonlite::fromJSON(path)$tiers
+  vapply(c("device", "edge", "cloud"),
+         function(tr) tiers[[tr]]$demand_weight, numeric(1))
 }
 
 #' Task deadlines for the agentic environment (ms).

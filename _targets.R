@@ -161,9 +161,10 @@ list(
   # weights are measured, not constructed, so they match none of the three
   # synthetic topologies, and its base latencies are its own -- hence the
   # deadline set and value-decay rate Exp.9 runs it with, unchanged, with N the
-  # only knob. Its busiest tier is the device tier at 1.11/200, so a threshold
-  # at rho = 0.75 puts the onset near N = 135; the grid steps by 20, which is
-  # 0.111 in rho, finer than the band the synthetic onsets occupy.
+  # only knob. Its busiest tier is the edge tier at 1.81/300, which carries both
+  # tool calls of every task, so a threshold at rho = 0.75 puts the onset near
+  # N = 125; the grid steps by 20, which is 0.121 in rho, and N = 120 lands at
+  # rho = 0.72, inside the band the synthetic onsets occupy.
   tar_target(
     exp2b_param_grid,
     tidyr::expand_grid(

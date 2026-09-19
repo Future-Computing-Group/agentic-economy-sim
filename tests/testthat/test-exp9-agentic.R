@@ -18,10 +18,18 @@ test_that("the agentic graph is series-parallel with the measured demand profile
   # SP structure: plan fans out to two tools, which converge on aggregate.
   expect_true(all(c("plan","tool0") %in% g$edges$from))
   expect_true(all(g$edges$to[g$edges$from %in% c("tool0","tool1")] == "aggregate"))
-  # Measured demand weights (cloud/aggregate heaviest), device/edge/cloud.
+  # The demand weights are READ from the measured profile rather than typed in
+  # here or in the graph, so the two cannot drift apart: a regenerated profile
+  # either reaches the simulator or fails this test.
+  tiers <- jsonlite::fromJSON(here::here("agentic", "agentic_profile.json"))$tiers
+  measured <- vapply(c("device", "edge", "cloud"),
+                     function(tr) tiers[[tr]]$demand_weight, numeric(1))
   dw <- setNames(g$demand_weights$demand_weight, g$demand_weights$tier)
-  expect_equal(unname(dw["cloud"]), 2.25, tolerance = 1e-9)
-  expect_true(dw["cloud"] > dw["edge"])      # aggregate heavier than tools
+  expect_equal(dw[c("device", "edge", "cloud")], measured)
+  # A task's two tool calls both land on the edge tier, so edge demand per task
+  # is their sum and outweighs the single planning call on the device tier.
+  expect_true(dw["edge"] > dw["device"])
+  expect_true(dw["cloud"] > dw["edge"])      # aggregate heavier than either tool
 })
 
 test_that("the agentic environment carries the measured base latencies", {
@@ -71,7 +79,7 @@ test_that("the agentic drop rate responds to load", {
   # Liveness check on the re-derived environment, not a performance claim: under
   # the old deadline set the drop rate was dominated by capacity rationing and
   # could not distinguish a deadline miss from a task never admitted. Measured
-  # on 3 seeds, naive arm: 0.09-0.11 at medium against 0.44-0.52 at high.
+  # on 3 seeds, naive arm: 0.17-0.19 at medium against 0.49-0.53 at high.
   args <- c(list("naive", "agentic", N = 200L, seed = 1L, n_rounds = 40L),
             .agentic_env_args)
   med  <- do.call(exp4_run_single, c(args, list(load_level = "medium")))
@@ -85,11 +93,11 @@ test_that("the agentic drop rate responds to load", {
 test_that("the integrator reduces price volatility on the real agentic workload (contended regime)", {
   # Price stability is a CONTENDED-regime property: the integrator absorbs
   # volatility only where the naive multi-tier market is itself volatile. The
-  # measured agentic workload is light (Sigma_demand 4.36), so it contends only
-  # at scale; at N = 200 (high load) the bottleneck tier's offered load is 1.67,
-  # inside the contended band, the naive market is genuinely volatile and the
-  # integrator absorbs it. Re-derived on 3 seeds at the re-derived environment:
-  # naive 0.2155 to 0.3040, hybrid 0.1107 to 0.1190.
+  # measured agentic workload is light (Sigma_demand 4.84, against 12 for
+  # entangled), so it contends only at scale; at N = 200 (high load) the
+  # bottleneck tier's offered load is 1.81, the naive market is genuinely
+  # volatile and the integrator absorbs it. Measured on 3 seeds at the
+  # environment's own constants: naive 0.1907 to 0.2495, hybrid 0.1451 to 0.1457.
   nv <- do.call(exp4_run_single,
                 c(list("naive", "agentic", "high", N = 200L, seed = 1L,
                        n_rounds = 40L), .agentic_env_args))

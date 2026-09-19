@@ -7,7 +7,7 @@
   "seed": 1,
   "capacities": {"device": 200, "edge": 300, "cloud": 500},
   "base_ms": {"device": 5, "edge": 15, "cloud": 50},
-  "demand_weight": {"device": 1.11, "edge": 1.0, "cloud": 2.25},
+  "demand_weight": {"device": 1.0, "edge": 1.81, "cloud": 2.03},
   "deadlines": [500, 750, 1000],
   "sim_git_sha": "0000000"
 }

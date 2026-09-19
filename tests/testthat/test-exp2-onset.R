@@ -167,12 +167,15 @@ test_that("the onset reaches the flat statistics dump keyed by topology and load
 
 # ---- the measured agentic arm -----------------------------------------------
 
-test_that("rho_bottleneck is defined on the measured agentic topology", {
-  # Demand weights 1.11/1.0/2.25 against capacities 200/300/500: the busiest
-  # tier is the device tier at 1.11/200, not the cloud tier the heaviest weight
-  # sits on.
+test_that("rho_bottleneck is on the edge tier of the measured agentic topology", {
+  # Measured per-task demand weights against capacities 200/300/500. The busiest
+  # tier is the edge tier, which carries both tool calls of every task, not the
+  # cloud tier the heaviest single stage sits on.
+  w <- agentic_demand_weights()
+  capacity <- c(device = 200, edge = 300, cloud = 500)
+  expect_equal(names(which.max(w / capacity)), "edge")
   expect_equal(rho_bottleneck("agentic", 100L, "medium"),
-               max(1.11 / 200, 1.0 / 300, 2.25 / 500) * 1.0 * 100)
+               max(w / capacity) * 1.0 * 100)
   expect_equal(rho_bottleneck("agentic", 100L, "high"),
                1.5 * rho_bottleneck("agentic", 100L, "medium"))
 })
@@ -243,9 +246,8 @@ test_that("the agentic grid brackets the load at which the synthetic arms price"
   expect_equal(nrow(grid), 9L * 10L)
 
   # The synthetic onsets sit at rho 0.70 to 0.80. The agentic grid has to reach
-  # both sides of that band, and its step has to be finer than the band is wide
-  # or no grid point can land inside it: one step is 20 * 1.11 / 200 = 0.111 in
-  # rho, against a band of 0.10.
+  # both sides of that band and land a point inside it: one step is
+  # 20 * 1.81 / 300 = 0.121 in rho, and N = 120 sits at 0.72.
   rho <- vapply(sort(unique(grid$N)),
                 \(n) rho_bottleneck("agentic", n, "medium"), numeric(1))
   expect_lt(min(rho), 0.70)

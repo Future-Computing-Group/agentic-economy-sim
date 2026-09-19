@@ -66,43 +66,84 @@ def run_one(model, question):
     stages["aggregate"] = {"latency_ms": dt, "tokens": tk, "tier": "cloud"}
     return stages
 
+def with_demand_weights(agg):
+    """Normalise per-task tier demand to weights whose smallest tier is 1."""
+    base = min(t["mean_tokens_per_task"] for t in agg.values())
+    return {name: {**t, "demand_weight": round(t["mean_tokens_per_task"] / base, 2)}
+            for name, t in agg.items()}
+
+def aggregate_tiers(runs):
+    """Per-tier stage statistics of a set of task runs.
+
+    Demand weight is a PER-TASK quantity: the simulator charges a tier its
+    weight once per task, and a task visits the edge tier twice because its two
+    tool calls are parallel branches of the same task. Tokens are therefore
+    summed within a task before being averaged over tasks; a mean over stage
+    calls would understate edge demand by the branching factor. Latency stays
+    per call, because base latency is a per-stage quantity and parallel branches
+    overlap in time rather than adding.
+    """
+    agg = {}
+    for tier in ["device", "edge", "cloud"]:
+        per_task, toks, lats = [], [], []
+        for r in runs:
+            stages = [st for st in r.values() if st["tier"] == tier]
+            per_task.append(sum(st["tokens"] for st in stages))
+            toks += [st["tokens"] for st in stages]
+            lats += [st["latency_ms"] for st in stages]
+        agg[tier] = {"mean_tokens": statistics.mean(toks),
+                     "mean_tokens_per_task": statistics.mean(per_task),
+                     "mean_latency_ms": statistics.mean(lats),
+                     "n_stage_calls": len(toks)}
+    return with_demand_weights(agg)
+
+def rederive(profile):
+    """Recompute an existing profile's tier block, leaving every other field.
+
+    A profile that kept its per-stage records is re-aggregated from them. One
+    that kept only per-tier means is recovered exactly anyway: the mean of the
+    per-task totals is the tier's total token count over the number of tasks,
+    and that total is a sum of integer token counts, so rounding it removes the
+    float error in mean_tokens * n_stage_calls and nothing else.
+    """
+    if "runs" in profile:
+        return {**profile, "tiers": aggregate_tiers(profile["runs"])}
+    agg = {}
+    for name, t in profile["tiers"].items():
+        total = round(t["mean_tokens"] * t["n_stage_calls"])
+        agg[name] = {k: v for k, v in t.items() if k != "demand_weight"}
+        agg[name]["mean_tokens_per_task"] = total / profile["n_tasks"]
+    return {**profile, "tiers": with_demand_weights(agg)}
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="mistral:7b-instruct-q4_K_M")
     ap.add_argument("--n", type=int, default=5)
     ap.add_argument("--out", default="agentic/agentic_profile.json")
+    ap.add_argument("--rederive-from", metavar="JSON",
+                    help="recompute the tier block of an existing profile "
+                         "instead of calling the model")
     a = ap.parse_args()
 
-    runs = []
-    for q in TASKS[:a.n]:
-        try:
-            runs.append(run_one(a.model, q))
-        except Exception as e:
-            print(f"warn: task failed: {e}", file=sys.stderr)
-    if not runs:
-        print("no successful runs", file=sys.stderr); sys.exit(1)
+    if a.rederive_from:
+        with open(a.rederive_from) as f:
+            profile = rederive(json.load(f))
+    else:
+        runs = []
+        for q in TASKS[:a.n]:
+            try:
+                runs.append(run_one(a.model, q))
+            except Exception as e:
+                print(f"warn: task failed: {e}", file=sys.stderr)
+        if not runs:
+            print("no successful runs", file=sys.stderr); sys.exit(1)
 
-    # Aggregate per-tier: real tokens -> demand weight; real latency -> base_ms.
-    agg = {}
-    for tier in ["device", "edge", "cloud"]:
-        toks, lats = [], []
-        for r in runs:
-            for st in r.values():
-                if st["tier"] == tier:
-                    toks.append(st["tokens"]); lats.append(st["latency_ms"])
-        agg[tier] = {"mean_tokens": statistics.mean(toks),
-                     "mean_latency_ms": statistics.mean(lats),
-                     "n_stage_calls": len(toks)}
-    # Normalise tokens to integer demand weights (min tier = 1).
-    base = min(agg[t]["mean_tokens"] for t in agg)
-    profile = {
-        "model": a.model, "n_tasks": len(runs),
-        "runs": runs, "calls": CALLS,
-        "structure": "series-parallel (plan -> 2 parallel tools -> aggregate)",
-        "tiers": {t: {**agg[t],
-                      "demand_weight": round(agg[t]["mean_tokens"] / base, 2)}
-                  for t in agg},
-    }
+        profile = {
+            "model": a.model, "n_tasks": len(runs),
+            "runs": runs, "calls": CALLS,
+            "structure": "series-parallel (plan -> 2 parallel tools -> aggregate)",
+            "tiers": aggregate_tiers(runs),
+        }
     with open(a.out, "w") as f:
         json.dump(profile, f, indent=2)
     print(json.dumps(profile, indent=2))
