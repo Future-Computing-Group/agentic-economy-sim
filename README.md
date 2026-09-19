@@ -69,24 +69,24 @@ The testbed replays the market's admitted allocations on three tier containers r
 
 The two runs behind the reported testbed tables, both against the same exported market, both at the tier caps 2:3:5 the concurrency probe fixed (`emul/probe_concurrency.py`) and at the offered scale it implies.
 
-Clean calibration run, run directory `emul-rung3b-clean-20260919T055429Z`:
+Clean calibration run, run directory `emul-clean-20260919T055429Z`:
 
 ```sh
 docker compose -f emul/docker-compose.yaml up -d
 python3 emul/load_gen.py --replay-dir <replay-dir> --out-dir <run-dir> \
-  --run-id rung3b-clean \
+  --run-id clean \
   --load low --load high --max-rounds 50 --block-rounds 10 \
   --offered-scale 0.016667 --subsample-seed 1 --transport ollama \
   --timeout 300 --network-delay-ms device=5,edge=15,cloud=50
 docker compose -f emul/docker-compose.yaml down --remove-orphans
 ```
 
-Failure-injection run, run directory `emul-rung3b-failure-20260919T055429Z`: high load only, the cloud tier killed before round 25. It exists so the calibration statistics are never computed on a run containing a kill.
+Failure-injection run, run directory `emul-failure-20260919T055429Z`: high load only, the cloud tier killed before round 25. It exists so the calibration statistics are never computed on a run containing a kill.
 
 ```sh
 docker compose -f emul/docker-compose.yaml -f emul/docker-compose.failure.yaml up -d
 python3 emul/load_gen.py --replay-dir <replay-dir> --out-dir <run-dir> \
-  --run-id rung3b-failure \
+  --run-id failure \
   --load high --max-rounds 50 --block-rounds 10 \
   --offered-scale 0.016667 --subsample-seed 1 --transport ollama \
   --timeout 300 --network-delay-ms device=5,edge=15,cloud=50 \
