@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use this software, please cite the accompanying paper (see preferred-citation) and the software via its Zenodo DOI."
 title: "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\""
 type: software
-version: v2.0.0
-doi: 10.5281/zenodo.22842717
+version: v2.0.1
+doi: 10.5281/zenodo.21041130
 license: MIT
 repository-code: "https://github.com/Future-Computing-Group/agentic-economy-sim"
 keywords:

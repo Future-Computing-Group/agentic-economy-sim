@@ -1,7 +1,7 @@
 {
   "upload_type": "software",
   "title": "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\"",
-  "version": "v2.0.0",
+  "version": "v2.0.1",
   "description": "R + targets pipeline reproducing the experiments in the arXiv preprint arXiv:2603.05614, \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\": the topology x load ablation grid, the DSIC strategic-bidding test, a measured agentic LLM workload, and the integrator faithfulness and encapsulation-overhead studies. Reproduce all results with targets::tar_make().",
   "license": "MIT",
   "access_right": "open",
