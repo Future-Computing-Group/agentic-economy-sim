@@ -767,7 +767,10 @@ greedy_alloc_set <- function(ev, tasks_all, env) {
 #' @return TRUE when both conditions hold on this round's region and tasks.
 dsic_certificate <- function(env, tasks_all) {
   if (is.null(env$spec)) return(FALSE)
-  anc <- ancestor_matrix(env$spec)
+  # The environment's own ancestor matrix where it carries one, because a
+  # governance coupling adds a constraint column that the spec's arcs do not
+  # describe and that is exactly what can make the region stop being one.
+  anc <- env$anc %||% ancestor_matrix(env$spec)
   cap <- tier_capacities(env)
   C   <- setNames(cap$capacity, cap$tier)[colnames(anc)] / env$spec$weight
   cert <- polymatroid_certificate(leaf_rank(anc, C), rownames(anc))
