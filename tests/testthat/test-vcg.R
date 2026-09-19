@@ -25,7 +25,12 @@ vcg_tasks <- function(n = 40L, n_agents = 8L, seed = 1L) {
   tibble::tibble(
     task_id    = sprintf("t%03d", seq_len(n)),
     agent_id   = sample.int(n_agents, n, replace = TRUE),
-    deadline   = sample(c(100L, 150L, 200L), n, replace = TRUE),
+    # Deadlines at the pipeline's set. The old 100/150/200 ms sat below the
+    # bid-time latency ESTIMATE (critical path + alpha * util_hat^p, 222 ms on
+    # sp at util_hat = 0.5), not below the 135 ms critical path itself, so once
+    # the estimate stopped being the constant 50 every expected value here
+    # collapsed to salvage.
+    deadline   = sample(c(500L, 750L, 1000L), n, replace = TRUE),
     value_base = runif(n, 1, 2)
   )
 }
@@ -150,4 +155,25 @@ test_that("VCG is second-price on a single binding slot (hand-verifiable)", {
   loser_ev   <- ev[setdiff(1:2, winner_row)]
   # Winner pays the loser's ev (second price).
   expect_equal(res$vcg_payment[1], loser_ev, tolerance = 1e-8)
+})
+
+
+# ---- the exactness precondition ---------------------------------------------
+
+test_that("an allocator that is not the welfare argmax trips the exactness precondition", {
+  # The clamp on the Clarke payment is inert only while the allocation rule IS
+  # the welfare argmax: there, removing an agent can only free capacity for the
+  # others, so no externality is negative. Hand-build a rule that is not -- it
+  # fills the round only while every task is present, so removing an agent
+  # lowers what the others get -- and the guard must fire rather than let
+  # pmax(0, .) quietly turn a negative externality into a zero payment.
+  env   <- vcg_env_saturated()
+  tasks <- vcg_tasks(n = 12L, n_agents = 3L)
+  full  <- nrow(tasks)
+  local_global_stub(".greedy_pack_by", function(rank_vec, tasks_all, env) {
+    if (nrow(tasks_all) == full) seq_len(5L) else integer(0)
+  })
+
+  expect_error(vcg_allocate(tasks, env, util_hat = 0.5, blb(env), sm()),
+               "argmax")
 })

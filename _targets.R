@@ -23,14 +23,15 @@ library(crew)
 # controller is unavailable.
 tar_option_set(
   packages   = c("tidyverse", "RColorBrewer", "patchwork", "scales", "future", "boot"),
-  controller = crew::crew_controller_local(workers = 8L, seconds_idle = 60)
+  controller = crew::crew_controller_local(
+    workers = as.integer(Sys.getenv("SIM_WORKERS", "8")), seconds_idle = 60)
 )
 
 # Auto-source all R/ files (sim_helpers, sim_market, experiments, plots)
 purrr::walk(list.files("R", full.names = TRUE, pattern = "\\.[Rr]$"), source)
 
 # ===========================================================================
-# Simulation parameters (see Table V in the paper)
+# Simulation parameters (tab:sim-baseline-params in the paper)
 # ===========================================================================
 # "linear" is dropped from the experiment grid -- a linear chain is a degenerate
 # 1-leaf tree (linear ~ tree empirically, sigma_p=0 for both), so it adds a
@@ -38,14 +39,42 @@ purrr::walk(list.files("R", full.names = TRUE, pattern = "\\.[Rr]$"), source)
 # completeness.
 graph_types    <- c("tree", "sp", "entangled")
 load_levels    <- c("low", "medium", "high")
-n_agents       <- 75L                      # operating point: high load contends (rho~1.1-2.9), no collapse
+# Operating point, one agent count per topology. The knob is the agent count;
+# capacities {200,300,500} and deadlines {500,750,1000} ms are unchanged. The
+# criterion: at high load the market contends -- bottleneck offered load
+# rho = max_r(w_r/C_r) * lambda * N in [1.1, 1.7] -- without collapsing, at
+# medium load it still clears, and at low load it is slack. One shared count
+# cannot do that under the corrected bid-time latency: the topologies differ by
+# 2.5x in bottleneck demand per task, so at N = 75 sp and entangled are already
+# collapsed (clearing fraction 0.007 and 0.001) while tree is only at rho 1.12.
+# Measured on the naive arm, 3 seeds x 100 rounds, clearing fraction (share of
+# generated tasks admitted) and drop rate at high / medium load:
+#   tree       N = 90  rho 1.35  clearing 0.69 / 0.99  drop 0.31 / 0.01
+#   sp         N = 55  rho 1.10  clearing 0.75 / 0.92  drop 0.29 / 0.08
+#   entangled  N = 35  rho 1.31  clearing 0.56 / 0.82  drop 0.47 / 0.18
+# One grid step up the clearing fraction falls, but not uniformly, and only sp
+# collapses. Over seeds 1 to 6 at high load, 30 rounds: tree at N = 95 clears
+# 0.55 to 0.64, indistinguishable from N = 90's 0.61 to 0.68; entangled at
+# N = 40 degrades smoothly to 0.25 to 0.37; sp at N = 60 clears 0.27 to 0.58 on
+# five seeds and collapses on the sixth, to 0.029, the online success model
+# having learnt that nothing succeeds and the market admitting nothing for tens
+# of rounds. The band is the criterion; that one seed-dependent collapse is why
+# sp sits on the band's lower edge rather than at its centre.
+# Pinned by tests/testthat/test-operating-point.R, swept by
+# R/calibrate_operating_point.R.
+n_agents       <- c(tree = 90L, sp = 55L, entangled = 35L)
 n_rounds       <- 200L
 n_seeds        <- 10L
 task_deadlines <- c(500L, 750L, 1000L)     # ms; cross-continuum agentic round-trips (device-edge-cloud, 0.5-1s)
 lambda_l       <- 0.005                     # per-ms latency decay; delta(T) = exp(-0.005*T)
-integ_efficiency_sp  <- 0.75                # integrator efficiency factor for SP topology
-integ_efficiency_ent <- 0.85                # integrator efficiency factor for entangled topology
-integ_eta      <- 0.15                      # integrator slice price step size
+# Integrator efficiency: no assumed demand reduction in any headline arm, on
+# either topology. The factor is a modelling assumption no experiment measures,
+# so at 1.0 the integrator's reported benefit is purely architectural and the
+# SP-versus-entangled asymmetry stops confounding topology with assumed savings.
+# Its sensitivity is reported by Exp.14, which sweeps it including this level.
+integ_efficiency_sp  <- 1.0                 # integrator efficiency factor for SP topology
+integ_efficiency_ent <- 1.0                 # integrator efficiency factor for entangled topology
+integ_eta      <- price_eta                 # slice price step; common to every arm (R/sim_market.R)
 
 # IEEE TSC figure dimensions (single-column ~3.5 in, 600 dpi)
 fig_width  <- 3.5
@@ -72,7 +101,7 @@ list(
       graph_type       = exp1_param_grid$graph_type,
       load_level       = exp1_param_grid$load_level,
       seed             = exp1_param_grid$seed,
-      n_agents         = n_agents,
+      n_agents         = n_agents[[exp1_param_grid$graph_type]],
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = lambda_l
@@ -119,7 +148,6 @@ list(
       policy     = c("none", "moderate", "strict"),
       graph_type = c("tree", "entangled"),
       load_level = c("medium", "high"),
-      N          = n_agents,
       seed       = seq_len(n_seeds)
     )
   ),
@@ -129,7 +157,7 @@ list(
       policy           = exp3_param_grid$policy,
       graph_type       = exp3_param_grid$graph_type,
       load_level       = exp3_param_grid$load_level,
-      N                = exp3_param_grid$N,
+      N                = n_agents[[exp3_param_grid$graph_type]],
       seed             = exp3_param_grid$seed,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
@@ -141,12 +169,18 @@ list(
   tar_target(exp3_summary_table, exp3_aggregate(exp3_results_raw)),
 
   # ===========================================================================
-  # Experiment 4: Naive vs hybrid (EMA only) vs hybrid (full) architecture
+  # Experiment 4: the architecture x smoothing factorial
+  #
+  # Encapsulation (per-tier market versus integrator slice) crossed with EMA
+  # price smoothing, all four cells at efficiency 1.0 and one common price
+  # step, so neither factor carries the other's effect. The legacy `hybrid`
+  # level is not a cell: it adds an assumed demand reduction, and it is now
+  # reported only by the sensitivity sweep.
   # ===========================================================================
   tar_target(
     exp4_param_grid,
     tidyr::expand_grid(
-      architecture = c("naive", "hybrid_ema", "hybrid"),
+      architecture = c("naive", "naive_ema", "hybrid_noema", "hybrid_ema"),
       graph_type   = c("sp", "entangled"),
       load_level   = c("medium", "high"),
       N            = c(20L, 40L, 60L, 80L),
@@ -169,6 +203,9 @@ list(
         integ_efficiency_sp,
         integ_efficiency_ent
       ),
+      # One tatonnement step for both the per-tier market and the slice, named
+      # at the call site because a difference here is a confound, not a setting.
+      eta              = integ_eta,
       integ_eta        = integ_eta
     ),
     pattern   = map(exp4_param_grid),
@@ -196,7 +233,7 @@ list(
       policy           = exp5_param_grid$policy,
       graph_type       = exp5_param_grid$graph_type,
       load_level       = exp5_param_grid$load_level,
-      N                = n_agents,
+      N                = n_agents[[exp5_param_grid$graph_type]],
       seed             = exp5_param_grid$seed,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
@@ -216,16 +253,7 @@ list(
   # ===========================================================================
   # Experiment 6: Mechanism Ablation
   # ===========================================================================
-  tar_target(
-    exp6_param_grid,
-    tidyr::expand_grid(
-      mechanism    = c("random", "edf", "greedy_ev", "market"),
-      architecture = c("naive", "hybrid"),
-      graph_type   = c("tree", "sp", "entangled"),
-      load_level   = c("medium", "high"),
-      seed         = seq_len(n_seeds)
-    )
-  ),
+  tar_target(exp6_param_grid, exp6_mechanism_grid(n_seeds)),
   tar_target(
     exp6_results_raw,
     exp6_run_single(
@@ -233,7 +261,8 @@ list(
       architecture     = exp6_param_grid$architecture,
       graph_type       = exp6_param_grid$graph_type,
       load_level       = exp6_param_grid$load_level,
-      N                = n_agents,
+      p_post_k         = exp6_param_grid$p_post_k,
+      N                = n_agents[[exp6_param_grid$graph_type]],
       seed             = exp6_param_grid$seed,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
@@ -249,6 +278,15 @@ list(
     iteration = "vector"
   ),
   tar_target(exp6_summary_table, exp6_aggregate(exp6_results_raw)),
+
+  # ===========================================================================
+  # Measured agentic workload profile (tracked as a file dependency)
+  # ===========================================================================
+  # The profile parameterises the agentic environment's per-tier base latencies,
+  # its deadlines and its value-decay rate. Tracking it as a file target means a
+  # regenerated profile invalidates the results it parameterises, rather than
+  # leaving them stale until someone runs the unit tests.
+  tar_target(agentic_profile_file, agentic_profile_path(), format = "file"),
 
   # ===========================================================================
   # Experiment 7: VCG/DSIC incentive compatibility (strategic-bidding regret)
@@ -268,12 +306,53 @@ list(
       N          = 8L,
       seed       = exp7_param_grid$seed,
       cap        = ifelse(exp7_param_grid$graph_type == "agentic", 12, 30),
+      # The incentive arm and the stability arm share one agentic environment:
+      # deadlines and value-decay rate rescaled to its measured critical path.
+      deadlines  = if (exp7_param_grid$graph_type == "agentic") {
+        agentic_deadlines(path = agentic_profile_file)
+      } else {
+        task_deadlines
+      },
+      lambda_l_default = if (exp7_param_grid$graph_type == "agentic") {
+        agentic_lambda_l(path = agentic_profile_file)
+      } else {
+        lambda_l
+      },
       n_rounds   = 30L
     ),
     pattern   = map(exp7_param_grid),
     iteration = "vector"
   ),
   tar_target(exp7_summary_table, exp7_aggregate(exp7_results_raw)),
+
+  # Exp.7b: the second arm of the same experiment. Same grid, same cells, same
+  # saturating caps; the agent's strategy set is the named finite set of
+  # non-uniform JOINT misreports and the reported statistic is the worst case
+  # over it (br_gain_*: a profitable deviation is positive).
+  tar_target(
+    exp7b_results_raw,
+    exp7b_run_single(
+      graph_type = exp7_param_grid$graph_type,
+      load_level = "high",
+      N          = 8L,
+      seed       = exp7_param_grid$seed,
+      cap        = ifelse(exp7_param_grid$graph_type == "agentic", 12, 30),
+      deadlines  = if (exp7_param_grid$graph_type == "agentic") {
+        agentic_deadlines(path = agentic_profile_file)
+      } else {
+        task_deadlines
+      },
+      lambda_l_default = if (exp7_param_grid$graph_type == "agentic") {
+        agentic_lambda_l(path = agentic_profile_file)
+      } else {
+        lambda_l
+      },
+      n_rounds   = 30L
+    ),
+    pattern   = map(exp7_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(exp7b_summary_table, exp7b_aggregate(exp7b_results_raw)),
 
   # ===========================================================================
   # Experiment 9: Real agentic workload (exp4 on agentic topology, N=200)
@@ -296,8 +375,10 @@ list(
       N                = exp9_param_grid$N,
       seed             = exp9_param_grid$seed,
       n_rounds         = n_rounds,
-      deadlines        = task_deadlines,
-      lambda_l_default = lambda_l,
+      # Rescaled to the agentic environment's own measured critical path; the
+      # nominal set is unchanged for every other experiment.
+      deadlines        = agentic_deadlines(path = agentic_profile_file),
+      lambda_l_default = agentic_lambda_l(path = agentic_profile_file),
       integ_efficiency = integ_efficiency_sp,
       integ_eta        = integ_eta
     ),
@@ -325,7 +406,7 @@ list(
         "hybrid",
         graph_type       = exp10_param_grid$graph_type,
         load_level       = exp10_param_grid$load_level,
-        N                = n_agents,
+        N                = n_agents[[exp10_param_grid$graph_type]],
         seed             = exp10_param_grid$seed,
         n_rounds         = n_rounds,
         deadlines        = task_deadlines,
@@ -346,6 +427,44 @@ list(
   tar_target(exp10_summary_table, exp10_aggregate(exp10_results_raw)),
 
   # ===========================================================================
+  # Experiment 11: heterogeneous per-task recipes over one fixed DAG
+  # ===========================================================================
+  # One DAG (tree), one agent count, one load level. Contention is varied
+  # through CAPACITY rather than arrival rate so the per-round task count stays
+  # inside the exact packer's enumeration budget. N = 8 for the same reason: the
+  # welfare gap this experiment reports is measured against a brute-force
+  # optimum, which is what makes it the one welfare number in the study that is
+  # not greedy measured against greedy.
+  tar_target(
+    exp11_param_grid,
+    tidyr::expand_grid(
+      arm  = exp11_arms(),
+      cap  = c(6, 9, 12),
+      seed = seq_len(n_seeds)
+    )
+  ),
+  tar_target(
+    exp11_results_raw,
+    exp11_run_single(
+      arm              = exp11_param_grid$arm,
+      cap              = exp11_param_grid$cap,
+      seed             = exp11_param_grid$seed,
+      N                = 8L,
+      n_rounds         = 100L,
+      deadlines        = task_deadlines,
+      lambda_l_default = lambda_l
+    ),
+    pattern   = map(exp11_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(exp11_summary_table, exp11_aggregate(exp11_results_raw)),
+  # The two closed-form instruments: measured over-commitment against the
+  # predicted factor, and the price of the safe interface. Both are exact and
+  # cost nothing, so they are targets rather than prose.
+  tar_target(exp11_overcommitment_table, exp11_overcommitment_sweep()),
+  tar_target(exp11_inner_exposure_table, exp11_inner_exposure_control()),
+
+  # ===========================================================================
   # Experiment 12: Encapsulation overhead (hybrid, enc_overhead_ms swept)
   # ===========================================================================
   tar_target(
@@ -364,7 +483,7 @@ list(
         "hybrid",
         graph_type       = exp12_param_grid$graph_type,
         load_level       = exp12_param_grid$load_level,
-        N                = n_agents,
+        N                = n_agents[[exp12_param_grid$graph_type]],
         seed             = exp12_param_grid$seed,
         n_rounds         = n_rounds,
         deadlines        = task_deadlines,
@@ -385,17 +504,25 @@ list(
   tar_target(exp12_summary_table, exp12_aggregate(exp12_results_raw)),
 
   # ===========================================================================
-  # Experiment 14: Parameter sensitivity table (self-contained, loops internally)
+  # Experiment 14: Parameter sensitivity table, one branch per (parameter, level)
   # ===========================================================================
+  # Branching rather than looping inside one target: the cells are independent
+  # (each run reseeds), so they run on all workers instead of one, and a single
+  # cell can be invalidated or retried without recomputing the whole sweep.
+  tar_target(exp14_sweep_cells, exp14_sweep_grid()),
   tar_target(
     exp14_sensitivity,
-    exp14_sensitivity_table(
+    exp14_sensitivity_row(
+      parameter  = exp14_sweep_cells$parameter,
+      level      = exp14_sweep_cells$level,
       topologies = c("sp", "entangled"),
       seeds      = seq_len(5),
       N          = n_agents,
       load_level = "high",
       n_rounds   = n_rounds
-    )
+    ),
+    pattern   = map(exp14_sweep_cells),
+    iteration = "vector"
   ),
 
   # ===========================================================================
@@ -405,8 +532,65 @@ list(
   tar_target(stats_exp2, stat_exp2(bind_rows(exp2_results_raw))),
   tar_target(stats_exp3, stat_exp3(bind_rows(exp3_results_raw))),
   tar_target(stats_exp4, stat_exp4(bind_rows(exp4_results_raw))),
+  tar_target(stats_exp4_factorial, stat_exp4_factorial(bind_rows(exp4_results_raw))),
+  tar_target(stats_exp4_volatility_reduction,
+             stat_exp4_volatility_reduction(bind_rows(exp4_results_raw))),
   tar_target(stats_exp5, stat_exp5(bind_rows(exp5_results_raw))),
   tar_target(stats_exp6, stat_exp6(bind_rows(exp6_results_raw))),
+  tar_target(stats_exp7, stat_exp7(bind_rows(exp7_results_raw))),
+  tar_target(stats_exp7b, stat_exp7b(bind_rows(exp7b_results_raw))),
+  tar_target(stats_exp11, stat_exp11(bind_rows(exp11_results_raw))),
+
+  # Single machine-written dump of every Kruskal-Wallis test and of Exp.7a's
+  # regret standard errors, each row carrying the sample size it was computed
+  # on. This is what the supplement's statistics are transcribed from.
+  tar_target(stats_report, make_stats_report(list(
+    exp1 = stats_exp1, exp2 = stats_exp2, exp3 = stats_exp3,
+    exp4 = stats_exp4, exp4_factorial = stats_exp4_factorial,
+    exp5 = stats_exp5, exp6 = stats_exp6,
+    exp7a = stats_exp7, exp7b = stats_exp7b,
+    exp11 = stats_exp11))),
+  tar_target(
+    stats_report_file,
+    {
+      dir.create("results", showWarnings = FALSE, recursive = TRUE)
+      readr::write_csv(stats_report, "results/stats-report.csv")
+      "results/stats-report.csv"
+    },
+    format = "file"
+  ),
+
+  # The architecture x smoothing decomposition does not pass through the flat
+  # dump, which collects Kruskal-Wallis rows: it is four contrasts with their
+  # own CIs and their own sample size. It gets its own written file for the
+  # same reason -- the numbers that answer the attribution question are
+  # transcribed from a machine-written row, not read off a console.
+  tar_target(
+    stats_exp4_decomposition_file,
+    {
+      dir.create("results", showWarnings = FALSE, recursive = TRUE)
+      readr::write_csv(stats_exp4_factorial$decomposition,
+                       "results/exp4-decomposition.csv")
+      "results/exp4-decomposition.csv"
+    },
+    format = "file"
+  ),
+
+  # The headline tail-dispersion reduction is a ratio of tail CVs on a restricted
+  # cell set, so neither the flat dump nor the decomposition file can carry it:
+  # it gets its own machine-written file, with the per-cell reductions, the cell
+  # count and the exclusions beside the median, so the sentence in the abstract
+  # is transcribed from a row rather than from a console.
+  tar_target(
+    stats_exp4_volatility_reduction_file,
+    {
+      dir.create("results", showWarnings = FALSE, recursive = TRUE)
+      readr::write_csv(stats_exp4_volatility_reduction,
+                       "results/exp4-volatility-reduction.csv")
+      "results/exp4-volatility-reduction.csv"
+    },
+    format = "file"
+  ),
 
   # ===========================================================================
   # Figures: Experiment 1
@@ -609,6 +793,11 @@ list(
     ggsave("fig/tufte/exp5_tufte.pdf", exp5_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
     ggsave("fig/tufte/exp5_tufte.png", exp5_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
     "fig/tufte/exp5_tufte.pdf" }, format = "file"),
+  tar_target(exp11_plot_tufte, make_exp11_tufte(bind_rows(exp11_results_raw))),
+  tar_target(exp11_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/tufte/exp11_tufte.pdf", exp11_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/tufte/exp11_tufte.png", exp11_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/tufte/exp11_tufte.pdf" }, format = "file"),
   tar_target(exp6_plot_tufte, make_exp6_tufte(bind_rows(exp6_results_raw))),
   tar_target(exp6_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
     ggsave("fig/tufte/exp6_tufte.pdf", exp6_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)

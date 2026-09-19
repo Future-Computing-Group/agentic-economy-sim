@@ -1,0 +1,7 @@
+round,task_id,agent_id,deadline_ms,value_base,admitted
+1,t1,a1,500,12.5,TRUE
+1,t2,a2,750,9.0,TRUE
+1,t3,a1,1000,4.25,TRUE
+1,t4,a3,500,1.75,FALSE
+2,t5,a2,750,8.5,TRUE
+2,t6,a3,1000,3.0,FALSE

@@ -45,3 +45,51 @@ test_that("truthful (alpha=1) is the empirical best response: regret >= 0, =0 at
               info = "a shade with negative regret would mean misreport beats truthful (DSIC violation)")
   expect_gt(max(reg), 1e-6)
 })
+
+
+# ---- the reported standard errors -------------------------------------------
+
+# Two topologies x five seeds, on values whose standard error is exact: the
+# variance of c(0, 0, 0, 0, 5) is 5 and n is 5, so sd/sqrt(n) is 1 on the nose,
+# and 2 on the same shape scaled by two. A constant column has SE 0.
+exp7_se_frame <- function() {
+  tibble::tibble(
+    graph_type   = rep(c("tree", "sp"), each = 5L),
+    load_level   = "high",
+    N            = 8L,
+    seed         = rep(1:5, times = 2L),
+    mean_payment = 1,
+    mean_welfare = 1,
+    regret_0.5   = c(0, 0, 0, 0, 5, 0, 0, 0, 0, 10),
+    regret_1     = 0
+  )
+}
+
+test_that("stat_exp7 reports the mean regret and its standard error per topology per shade", {
+  s <- stat_exp7(exp7_se_frame())$by_topology
+
+  expect_equal(nrow(s), 4L)            # two topologies x two shades
+  expect_setequal(s$shade, c("0.5", "1"))
+  tree <- dplyr::filter(s, graph_type == "tree", shade == "0.5")
+  sp   <- dplyr::filter(s, graph_type == "sp",   shade == "0.5")
+  expect_equal(tree$mean_regret, 1)
+  expect_equal(tree$se, 1)
+  expect_equal(sp$mean_regret, 2)
+  expect_equal(sp$se, 2)
+  # The sample size travels with the estimate, as everywhere else in the report.
+  expect_true(all(s$n == 5L))
+  # A shade with no spread has no error, not a missing one.
+  expect_true(all(dplyr::filter(s, shade == "1")$se == 0))
+})
+
+test_that("the Exp.7a standard errors reach the flat statistics report", {
+  rep <- make_stats_report(list(exp7a = stat_exp7(exp7_se_frame())))
+
+  expect_setequal(rep$experiment, "exp7a")
+  expect_setequal(rep$cell, c("tree", "sp"))
+  # The SE is the statistic the caption quotes, and it arrives with its n.
+  row <- dplyr::filter(rep, cell == "sp", metric == "regret_0.5_se")
+  expect_equal(row$statistic, 2)
+  expect_equal(row$n, 5L)
+  expect_equal(nrow(rep), 4L)
+})

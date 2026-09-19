@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Exp.9 (R2.2): instrument a REAL multi-step LLM tool-use agent and emit the
+Exp.9: instrument a REAL multi-step LLM tool-use agent and emit the
 service-dependency DAG + per-stage resource/latency profile it actually
 produces. This is the bridge that makes the evaluation agentic rather than a
 synthetic relabel: the DAG structure and per-tier demand weights fed to the
@@ -23,6 +23,7 @@ are whatever the real model produces.
 import argparse, json, time, statistics, sys, urllib.request
 
 OLLAMA = "http://localhost:11434/api/generate"
+CALLS = []  # per-call stage records, kept for the emulation timeline
 
 TASKS = [
     "What is the capital of France, and what is its approximate population?",
@@ -41,6 +42,7 @@ def call(model, prompt, timeout=120):
         resp = json.load(r)
     dt_ms = (time.time() - t0) * 1000.0
     toks = int(resp.get("prompt_eval_count", 0)) + int(resp.get("eval_count", 0))
+    CALLS.append({"t_start": t0, "latency_ms": dt_ms, "tokens": toks})
     return dt_ms, toks, resp.get("response", "")
 
 def run_one(model, question):
@@ -95,6 +97,7 @@ def main():
     base = min(agg[t]["mean_tokens"] for t in agg)
     profile = {
         "model": a.model, "n_tasks": len(runs),
+        "runs": runs, "calls": CALLS,
         "structure": "series-parallel (plan -> 2 parallel tools -> aggregate)",
         "tiers": {t: {**agg[t],
                       "demand_weight": round(agg[t]["mean_tokens"] / base, 2)}

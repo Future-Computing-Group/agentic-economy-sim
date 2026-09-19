@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite the accompanying paper (see preferred-citation) and the software via its Zenodo DOI."
 title: "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\""
 type: software
-version: v1.0.0
+version: v2.0.0
 license: MIT
 repository-code: "https://github.com/Future-Computing-Group/agentic-economy-sim"
 keywords:
@@ -40,8 +40,12 @@ authors:
 preferred-citation:
   type: article
   title: "Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum"
-  journal: "IEEE Transactions on Services Computing"
   year: 2026
+  notes: "arXiv preprint"
+  url: "https://arxiv.org/abs/2603.05614"
+  identifiers:
+    - type: other
+      value: "arXiv:2603.05614"
   authors:
     - family-names: Lovén
       given-names: Lauri

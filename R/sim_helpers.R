@@ -4,14 +4,18 @@
 #
 # Contents:
 #   - DAG construction (build_dependency_graph)
+#   - Measured agentic profile (agentic_profile_path, agentic_base_latency,
+#     agentic_deadlines, agentic_lambda_l)
 #   - Environment and agent initialisation
 #   - Task generation
+#   - Critical path (critical_path_ms: longest path over the DAG)
 #   - Allocation execution (critical-path DAG latency + M/M/1 queueing)
 #   - Trust updates (asymmetric reward/penalty)
-#   - Per-tier utilisation (offered-load congestion forecast)
+#   - Per-tier utilisation (offered-load congestion forecast, rho_bottleneck)
 #   - Utility functions (bind_tasks, base_latency_for_bids)
 #
-# Paper reference: Section VII (Simulation Setup) and Table V (Parameters).
+# Paper reference: the evaluation's experimental setting (sec:simulation-setup)
+# and the baseline parameter table (tab:sim-baseline-params).
 # ---------------------------------------------------------------------------
 
 suppressPackageStartupMessages({
@@ -166,6 +170,94 @@ build_dependency_graph <- function(graph_type) {
 
 
 # ===========================================================================
+# Measured agentic workload profile
+# ===========================================================================
+
+#' Path to the measured agentic workload profile.
+#'
+#' The pipeline tracks this file as a `format = "file"` target, so a regenerated
+#' profile invalidates the results it parameterises.
+#'
+#' @return Absolute path to agentic/agentic_profile.json.
+agentic_profile_path <- function() {
+  here::here("agentic", "agentic_profile.json")
+}
+
+#' Per-tier mean stage latency (ms) of the real agentic workload.
+#'
+#' Read from agentic/agentic_profile.json rather than typed in, so a regenerated
+#' profile cannot silently diverge from the environment it parameterises. The
+#' same file supplies the demand weights already used by
+#' build_dependency_graph("agentic").
+#'
+#' @param path Path to the measured profile.
+#' @return Named numeric vector (device, edge, cloud) of mean stage latency (ms).
+agentic_base_latency <- function(path = agentic_profile_path()) {
+  tiers <- jsonlite::fromJSON(path)$tiers
+  vapply(c("device", "edge", "cloud"),
+         function(tr) tiers[[tr]]$mean_latency_ms, numeric(1))
+}
+
+#' Task deadlines for the agentic environment (ms).
+#'
+#' Rescaled from the environment's own zero-queue critical path rather than
+#' inherited from the nominal environments, whose deadlines the real workload
+#' misses by roughly a factor of three:
+#'
+#'   D_bar     = critical_path_ms(agentic graph, measured base latencies)
+#'   deadlines = round_to_100(multipliers * D_bar)
+#'
+#' D_bar is 3350.5 ms, giving 4200, 5000 and 5900 ms. The multipliers are a
+#' measurement-design choice, placed against the band realised latency can
+#' occupy rather than against any outcome: the queueing term is capped at 500 ms
+#' per tier and the agentic critical path visits three tiers, so latency lives in
+#' [D_bar, D_bar + 1500] before execution noise of sd = 0.1 * critical path.
+#' 4200 ms is inside that band and is missed once queueing bites, 5000 ms sits at
+#' its top edge, and 5900 ms is above it by more than two standard deviations. A
+#' deadline set entirely above the band would make the drop rate identically zero
+#' and the experiment vacuous; one entirely below it would make it identically
+#' one.
+#'
+#' @param multipliers Multiples of the zero-queue critical path.
+#' @param path        Path to the measured profile.
+#' @return Integer vector of deadlines (ms).
+agentic_deadlines <- function(multipliers = c(1.25, 1.5, 1.75),
+                              path = agentic_profile_path()) {
+  d_bar <- critical_path_ms(build_dependency_graph("agentic"),
+                            agentic_base_latency(path))
+  as.integer(round(multipliers * d_bar / 100) * 100)
+}
+
+#' Value-decay rate for the agentic environment (per ms).
+#'
+#' lambda_l is the time constant of the task-value model,
+#' V = v_base * exp(-lambda_l * latency). The nominal 0.005 per ms belongs to
+#' the nominal environments, whose zero-queue critical path is 135 ms: it says
+#' that about half a task's value survives its own pipeline. Applied unchanged
+#' to a workload whose critical path is 3350.5 ms it leaves 5e-8 of that value,
+#' so no task has positive surplus against the reserve price and the market
+#' clears nothing at all: measured over 3 seeds at N = 200, clearing fraction
+#' 0.000, welfare 0.000 and VCG payments 0.000 on both arms at both loads.
+#'
+#' It is therefore rescaled by the same rule as the deadlines and to the same
+#' invariant: the share of a task's value surviving its own environment's
+#' zero-queue critical path is held at the nominal 0.509, so the value model and
+#' the deadline set are on one time scale. This is a calibration of the
+#' environment to its measured latencies, not a tuning of any outcome.
+#'
+#' @param lambda_l_nominal Decay rate of the nominal environments (per ms).
+#' @param path             Path to the measured profile.
+#' @return Scalar decay rate (per ms) for the agentic environment.
+agentic_lambda_l <- function(lambda_l_nominal = 0.005,
+                             path = agentic_profile_path()) {
+  nominal <- base_latency_for_bids(init_environment(build_dependency_graph("sp"),
+                                                    "medium", 1L, "sp"))
+  lambda_l_nominal * nominal /
+    critical_path_ms(build_dependency_graph("agentic"), agentic_base_latency(path))
+}
+
+
+# ===========================================================================
 # Environment initialisation
 # ===========================================================================
 
@@ -186,10 +278,19 @@ init_environment <- function(graph, load_level, n_agents, graph_type) {
     capacity = c(200, 300, 500)
   )
 
-  # Base processing latency per tier (ms), before queueing effects
+  # Base processing latency per tier (ms), before queueing effects. The agentic
+  # environment takes the MEASURED per-stage latencies of the real workload; the
+  # nominal environments keep the model's 5 / 15 / 50. Using only the measured
+  # demand weights and not the measured latencies is what made the agentic
+  # experiment score a real workload against deadlines it misses by a factor of
+  # three.
   base_latency <- tibble(
     tier    = c("device", "edge", "cloud"),
-    base_ms = c(5, 15, 50)
+    base_ms = if (graph_type == "agentic") {
+      unname(agentic_base_latency()[c("device", "edge", "cloud")])
+    } else {
+      c(5, 15, 50)
+    }
   )
 
   # Load factor: Poisson lambda for task arrivals per agent per round
@@ -237,6 +338,26 @@ init_environment <- function(graph, load_level, n_agents, graph_type) {
     # (~1/3) of mean task value, leaving surplus for the market to allocate.
     reserve_price  = 0.04
   )
+}
+
+
+#' Scale every per-tier capacity an environment carries.
+#'
+#' The environment carries capacity twice: `capacities`, which admission prices
+#' and packs against, and the copy joined into `per_tier`, which execution
+#' queues against (rho = demand / capacity, execute_allocation). Scaling one and
+#' not the other makes a capacity knob bind at admission and leave execution
+#' queueing on the unscaled tiers, so a sweep over it measures a fraction of the
+#' parameter it names. Both live here, next to the function that creates them.
+#'
+#' @param env    Environment list from init_environment().
+#' @param factor Multiplier on per-tier capacity.
+#' @return The environment, every capacity scaled.
+scale_capacities <- function(env, factor) {
+  if (factor == 1.0) return(env)
+  env$capacities <- dplyr::mutate(env$capacities, capacity = capacity * factor)
+  env$per_tier   <- dplyr::mutate(env$per_tier,   capacity = capacity * factor)
+  env
 }
 
 
@@ -291,81 +412,28 @@ generate_tasks <- function(agent_row, env, round, deadlines = c(500L, 750L, 1000
 
 
 # ===========================================================================
-# Allocation execution
+# Critical path
 # ===========================================================================
 
-#' Execute an allocation: compute realised latency and deadline success.
+#' End-to-end latency of a DAG's critical path (longest path).
 #'
-#' Latency model (execution phase):
-#'   1. Compute per-tier utilisation rho = demand / capacity.
-#'   2. M/M/1-inspired queueing delay: queue_term = lf * rho/(1-rho) * 2,
-#'      capped at 500 ms to avoid divergence near rho = 1.
-#'   3. Per-tier latency = base_ms + queue_term.
-#'   4. DAG critical-path algorithm (topological order, longest path)
-#'      determines the end-to-end latency for the entire pipeline.
-#'   5. Per-task latency is drawn from N(critical_path, 0.1 * critical_path)
-#'      to model execution-time noise (CV = 10%).
+#' The path is a TIER SEQUENCE: each node contributes the latency of its tier,
+#' and the critical path is the source-to-sink sequence maximising that sum.
+#' Computed by topological traversal (in-degree table, longest distance).
 #'
-#' If efficiency_factor is provided (hybrid architecture), effective demand
-#' per task is reduced by that factor, modelling the integrator's internal
-#' scheduling optimisation.
+#' Called with per-tier latencies including queueing (execute_allocation) or
+#' with the per-tier base latencies alone, which gives the zero-queue critical
+#' path (base_latency_for_bids).
 #'
-#' @param allocation       Tibble of accepted tasks (task_id, agent_id, deadline, value_base).
-#' @param env              Environment list.
-#' @param efficiency_factor Optional multiplier < 1 reducing effective demand (hybrid mode).
-#' @param enc_overhead_ms   Additive encapsulation/protocol-translation latency
-#'                          (ms) charged by the integrator on the hybrid path
-#'                          (Exp.12). Added to the critical-path latency
-#'                          before the deadline check, so it raises latency,
-#'                          deadline misses, and lowers welfare. Default 0.
-#' @return A tibble with columns: task_id, agent_id, latency, deadline, success.
-execute_allocation <- function(allocation, env, efficiency_factor = NULL,
-                               enc_overhead_ms = 0) {
-  n_tasks <- nrow(allocation)
-  if (n_tasks == 0) {
-    return(tibble(
-      task_id  = character(),
-      agent_id = integer(),
-      latency  = numeric(),
-      deadline = numeric(),
-      success  = logical()
-    ))
-  }
-
-  graph    <- env$graph
-  nodes_df <- graph$nodes
+#' @param graph        DAG object from build_dependency_graph() (nodes, edges).
+#' @param tier_latency Named numeric vector of per-tier latencies (ms), named
+#'                     by tier.
+#' @return Scalar critical-path latency (ms).
+critical_path_ms <- function(graph, tier_latency) {
+  nodes_df <- graph$nodes %>%
+    mutate(node_latency = as.numeric(tier_latency[tier]))
   edges_df <- graph$edges
 
-  # Demand weights: topology-aware per-tier demand per task
-  dw <- if (!is.null(env$demand_weights)) {
-    env$demand_weights
-  } else {
-    env$nodes_per_tier %>% transmute(tier = tier, demand_weight = as.numeric(nodes))
-  }
-
-  # If hybrid architecture, integrator reduces effective execution-time demand
-  eff <- if (!is.null(efficiency_factor)) efficiency_factor else 1.0
-
-  # ---- 1. Per-tier utilisation and queueing latency ----
-  per_tier <- env$per_tier %>%
-    left_join(dw, by = "tier") %>%
-    mutate(
-      demand_weight = coalesce(demand_weight, as.numeric(nodes)),
-      demand        = demand_weight * n_tasks * eff,
-      rho           = pmin(0.99, demand / pmax(capacity, 1)),
-      # M/M/1-inspired queueing delay, capped at 500 ms
-      queue_term    = env$load_factor * (rho / (1 - rho + 1e-3)) * 2,
-      tier_latency  = base_ms + pmin(queue_term, 500)
-    )
-
-  L_tier <- per_tier$tier_latency
-  names(L_tier) <- per_tier$tier
-
-  # ---- 2. Per-node latency from its tier ----
-  nodes_df <- nodes_df %>%
-    mutate(node_latency = as.numeric(L_tier[tier]))
-
-  # ---- 3. Critical path on the DAG (longest path via topological sort) ----
   indeg <- edges_df %>%
     count(to, name = "indeg") %>%
     right_join(nodes_df %>% select(node), by = c("to" = "node")) %>%
@@ -405,7 +473,91 @@ execute_allocation <- function(allocation, env, efficiency_factor = NULL,
     }
   }
 
-  critical_latency <- max(dist[is.finite(dist)])
+  max(dist[is.finite(dist)])
+}
+
+
+# ===========================================================================
+# Allocation execution
+# ===========================================================================
+
+#' Execute an allocation: compute realised latency and deadline success.
+#'
+#' Latency model (execution phase):
+#'   1. Compute per-tier utilisation rho = demand / capacity.
+#'   2. M/M/1-inspired queueing delay: queue_term = lf * rho/(1-rho) * 2,
+#'      capped at 500 ms to avoid divergence near rho = 1.
+#'   3. Per-tier latency = base_ms + queue_term.
+#'   4. critical_path_ms() turns those per-tier latencies into the end-to-end
+#'      latency for the entire pipeline (longest path over the DAG).
+#'   5. Per-task latency is drawn from N(critical_path, 0.1 * critical_path)
+#'      to model execution-time noise (CV = 10%).
+#'
+#' If efficiency_factor is provided (hybrid architecture), effective demand
+#' per task is reduced by that factor, modelling the integrator's internal
+#' scheduling optimisation.
+#'
+#' @param allocation       Tibble of accepted tasks (task_id, agent_id, deadline, value_base).
+#' @param env              Environment list.
+#' @param efficiency_factor Optional multiplier < 1 reducing effective demand (hybrid mode).
+#' @param enc_overhead_ms   Additive encapsulation/protocol-translation latency
+#'                          (ms) charged by the integrator on the hybrid path
+#'                          (Exp.12). Added to the critical-path latency
+#'                          before the deadline check, so it raises latency,
+#'                          deadline misses, and lowers welfare. Default 0.
+#' @return A tibble with columns: task_id, agent_id, latency, deadline, success.
+execute_allocation <- function(allocation, env, efficiency_factor = NULL,
+                               enc_overhead_ms = 0) {
+  n_tasks <- nrow(allocation)
+  if (n_tasks == 0) {
+    return(tibble(
+      task_id  = character(),
+      agent_id = integer(),
+      latency  = numeric(),
+      deadline = numeric(),
+      success  = logical()
+    ))
+  }
+
+  # Demand weights: topology-aware per-tier demand per task
+  dw <- if (!is.null(env$demand_weights)) {
+    env$demand_weights
+  } else {
+    env$nodes_per_tier %>% transmute(tier = tier, demand_weight = as.numeric(nodes))
+  }
+
+  # If hybrid architecture, integrator reduces effective execution-time demand
+  eff <- if (!is.null(efficiency_factor)) efficiency_factor else 1.0
+
+  # Realised per-tier demand of the ADMITTED MIX, when tasks carry recipes. The
+  # count times the mean recipe is the ADVERTISED quantity; charging execution
+  # that would make the deliverable set a copy of the advertised interface, and
+  # an interface that over-commits a tier -- four tasks needing (2,1,1.5) and two
+  # needing (1,2,1.5) draw (10,8,9) where six mean tasks draw (9,9,9) -- would
+  # queue and miss deadlines exactly as if it had not.
+  realised <- if (!is.null(env$recipes) && "recipe" %in% names(allocation)) {
+    colSums(task_recipes(allocation, env))
+  } else {
+    NULL
+  }
+
+  # ---- 1. Per-tier utilisation and queueing latency ----
+  per_tier <- env$per_tier %>%
+    left_join(dw, by = "tier") %>%
+    mutate(
+      demand_weight = coalesce(demand_weight, as.numeric(nodes)),
+      demand        = if (is.null(realised)) demand_weight * n_tasks * eff
+                      else unname(realised[tier]) * eff,
+      rho           = pmin(0.99, demand / pmax(capacity, 1)),
+      # M/M/1-inspired queueing delay, capped at 500 ms
+      queue_term    = env$load_factor * (rho / (1 - rho + 1e-3)) * 2,
+      tier_latency  = base_ms + pmin(queue_term, 500)
+    )
+
+  # ---- 2-3. Critical path on the DAG, at the queued per-tier latencies ----
+  critical_latency <- critical_path_ms(
+    env$graph, setNames(per_tier$tier_latency, per_tier$tier)
+  )
 
   # Integrator encapsulation/protocol-translation overhead (Exp.12):
   # an additive latency charged on the encapsulated (hybrid) path.
@@ -455,6 +607,30 @@ update_trust <- function(agents, results_t, reward = 0.03, penalty = 0.08) {
 # ===========================================================================
 # Utilisation and stability metrics
 # ===========================================================================
+
+#' Bottleneck-tier offered load at a given load level.
+#'
+#' rho = max_r(w_r / C_r) * lambda * N: the busiest tier's demand per task times
+#' the expected number of tasks per round. The operating-point criterion is
+#' stated on this quantity and not on the across-tier mean, which cannot
+#' separate a contended topology from a collapsed one (entangled at N = 75 has
+#' mean utilisation 1.66 and a drop rate of 1.00). Shared by the calibration
+#' sweep and the test that pins its outcome, so both read one definition.
+#'
+#' @param graph_type DAG topology.
+#' @param n_agents   Agent population.
+#' @param load_level One of "low", "medium", "high".
+#' @return Scalar offered load.
+rho_bottleneck <- function(graph_type, n_agents, load_level = "high") {
+  env <- init_environment(build_dependency_graph(graph_type), load_level,
+                          n_agents = n_agents, graph_type = graph_type)
+  ratio <- env$demand_weights %>%
+    left_join(env$capacities, by = "tier") %>%
+    mutate(ratio = demand_weight / capacity) %>%
+    pull(ratio)
+  max(ratio) * env$load_factor * n_agents
+}
+
 
 #' Compute per-tier utilisation as demand / capacity.
 #'
@@ -511,18 +687,22 @@ bind_tasks <- function(tasks_list) {
   }
 }
 
-#' Compute a reasonable base latency estimate for bid valuation.
+#' Compute a base latency estimate for bid valuation.
 #'
-#' Uses the mean per-tier latency from the environment if available;
-#' otherwise falls back to 50 ms.
+#' The estimate is the ZERO-QUEUE CRITICAL PATH of the environment's DAG: the
+#' end-to-end latency a task would see at the per-tier base latencies, before
+#' any queueing. That is what a bid-time estimate of end-to-end base latency
+#' should be, and it is topology-aware, unlike a per-tier summary statistic.
+#'
+#' An environment that carries no per_tier (an ad-hoc stub) falls back to 50 ms;
+#' a per_tier that carries no base_ms is an error rather than a silent fallback.
 #'
 #' @param env Environment list.
 #' @return Scalar base latency estimate (ms).
 base_latency_for_bids <- function(env) {
-  if ("per_tier" %in% names(env) &&
-      is.data.frame(env$per_tier) &&
-      "latency" %in% names(env$per_tier)) {
-    return(mean(env$per_tier$latency, na.rm = TRUE))
-  }
-  50
+  if (!is.data.frame(env$per_tier)) return(50)
+  stopifnot("env$per_tier carries no base_ms column" =
+              "base_ms" %in% names(env$per_tier))
+  critical_path_ms(env$graph,
+                   setNames(env$per_tier$base_ms, env$per_tier$tier))
 }

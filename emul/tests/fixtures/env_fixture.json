@@ -1,0 +1,13 @@
+{
+  "graph_type": "agentic",
+  "load_level": "medium",
+  "load_factor": 1.0,
+  "n_agents": 4,
+  "n_rounds": 2,
+  "seed": 1,
+  "capacities": {"device": 200, "edge": 300, "cloud": 500},
+  "base_ms": {"device": 5, "edge": 15, "cloud": 50},
+  "demand_weight": {"device": 1.11, "edge": 1.0, "cloud": 2.25},
+  "deadlines": [500, 750, 1000],
+  "sim_git_sha": "0000000"
+}

@@ -53,7 +53,12 @@ exp6_prepare <- function(raw_df, arch_filter = "naive") {
                "welfare", "mean_price_volatility", "efficiency")
 
   df <- raw_df %>%
-    filter(architecture == arch_filter)
+    filter(architecture == arch_filter,
+           # This figure is the four-mechanism ablation. The deployed-practice
+           # arms are dropped here rather than left to become an unlabelled NA
+           # level in the legend when the factor below does not name them; the
+           # comparison against deployed practice is reported on its own terms.
+           mechanism %in% c("random", "edf", "greedy_ev", "market"))
 
   if ("seed" %in% names(df)) {
     df <- df %>%

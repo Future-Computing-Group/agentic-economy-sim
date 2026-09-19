@@ -58,9 +58,9 @@ exp5_run_single <- function(architecture = c("naive", "hybrid"),
                             trust_threshold_strict = 0.75,
                             alpha = 50, p = 1.2,
                             lambda_l_default = 0.005, salvage = 0.0,
-                            iters = 15L, eta = 0.25, success_lr = 0.3,
+                            iters = 15L, eta = price_eta, success_lr = 0.3,
                             integ_beta = 0.8,
-                            integ_efficiency = 0.8, integ_eta = 0.15) {
+                            integ_efficiency = 1.0, integ_eta = price_eta) {
   architecture <- match.arg(architecture)
   policy       <- match.arg(policy)
   graph_type   <- match.arg(graph_type)

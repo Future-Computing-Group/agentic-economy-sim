@@ -24,7 +24,12 @@ make_test_tasks <- function(n_tasks = 40L, seed = 1L) {
   tibble::tibble(
     task_id    = sprintf("t%03d", seq_len(n_tasks)),
     agent_id   = sample.int(5, n_tasks, replace = TRUE),
-    deadline   = sample(c(100L, 150L, 200L), n_tasks, replace = TRUE),
+    # Deadlines at the pipeline's set. The old 100/150/200 ms sat below the
+    # bid-time latency ESTIMATE (critical path + alpha * util_hat^p, 222 ms on
+    # sp at util_hat = 0.5), not below the 135 ms critical path itself, so once
+    # the estimate stopped being the constant 50 every expected value here
+    # collapsed to salvage.
+    deadline   = sample(c(500L, 750L, 1000L), n_tasks, replace = TRUE),
     value_base = runif(n_tasks, 1, 2)
   )
 }
@@ -66,26 +71,43 @@ test_that("tier_prices vary with input load (not constant-by-construction)", {
   # High: tasks well ABOVE slice capacity → per-tier excess strongly
   # positive → prices climb. Broadcasting a single scalar slice price would
   # yield identical price vectors regardless of demand contrast.
-  res_low  <- integrator_clear(make_test_tasks(n_tasks = 4L,   seed = 1L),
-                               env, mock_util_hat, blb,
-                               mock_success_model(),
-                               make_test_integrator(),
-                               iters = 30L)
-  res_high <- integrator_clear(make_test_tasks(n_tasks = 600L, seed = 2L),
-                               env, mock_util_hat, blb,
-                               mock_success_model(),
-                               make_test_integrator(),
-                               iters = 30L)
+  #
+  # Budgets: 15 is the iteration count the simulator actually runs — every
+  # sim_exp*.R passes iters = 15L (integrator_clear's own default is 10L) — but
+  # the load response is measured over a WINDOW of budgets around it rather than
+  # at one. The per-tier tâtonnement does not settle: it limit-cycles, and a
+  # single budget can land on a trough where both arms sit on the price floor.
+  # Measured diff_max against the budget here: 12 -> 0.000, 15 -> 0.069,
+  # 18 -> 0.186, 20 -> 0.143, 30 -> 0.000, 40 -> 0.230. So the response is
+  # asserted on the max over the window, which holds at every anchor tried
+  # (0.186 at 12/15/18, 0.143 at 17/20/23, 0.230 at 37/40/43) and collapses to
+  # exactly 0.000 at all three anchors when the excess-demand term is removed
+  # from the tier step. Pinning a single budget would be pinning a phase.
+  clear_at <- function(n_tasks, seed, iters) {
+    integrator_clear(make_test_tasks(n_tasks = n_tasks, seed = seed),
+                     env, mock_util_hat, blb,
+                     mock_success_model(),
+                     make_test_integrator(),
+                     iters = iters)
+  }
+  budgets <- c(12L, 15L, 18L)
+  per_budget <- lapply(budgets, function(it) {
+    lo <- clear_at(4L,   1L, it)
+    hi <- clear_at(600L, 2L, it)
+    list(diff = max(abs(lo$tier_prices$price - hi$tier_prices$price)),
+         dominates = all(hi$tier_prices$price >= lo$tier_prices$price - 1e-6))
+  })
 
-  diff_max <- max(abs(res_low$tier_prices$price - res_high$tier_prices$price))
+  diff_max <- max(vapply(per_budget, `[[`, numeric(1), "diff"))
   expect_gt(
     diff_max, 1e-2,
     label = "tier_prices(high) vs tier_prices(low) must differ — broadcast detector"
   )
 
-  # Directional sanity: high-demand tier prices should exceed low-demand.
+  # Directional sanity: high-demand tier prices should exceed low-demand, at
+  # every budget in the window, not only at the one that carries the response.
   expect_true(
-    all(res_high$tier_prices$price >= res_low$tier_prices$price - 1e-6),
+    all(vapply(per_budget, `[[`, logical(1), "dominates")),
     info = "high-demand tier_prices must dominate low-demand tier_prices"
   )
 })

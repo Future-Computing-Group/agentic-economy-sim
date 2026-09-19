@@ -1,0 +1,59 @@
+# Three tier containers, one image, one bridge network. They differ only in
+# environment: the tier name, its emulated network delay, and the size of its
+# admission semaphore. NET_ADMIN is what lets the entrypoint install the qdisc.
+#
+# Defaults mirror the simulator's own per-tier offsets and capacity proportions.
+# The delays are environment overrides because that is the mechanism: the load
+# generator reads each container's delay from its fingerprint and refuses to run
+# when it is not the base_ms of the environment being replayed, so re-deriving
+# those latencies moves the testbed without an edit here.
+#
+# No restart policy, deliberately. A container that fails the netem guard must
+# stay down rather than crashloop, and one that dies mid-run must not come back
+# with a fresh semaphore and nothing in the records to show it.
+name: rtse-emul
+
+x-tier: &tier
+  build: .
+  image: rtse-emul-tier
+  cap_add: [NET_ADMIN]
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  networks: [emul]
+
+services:
+  device:
+    <<: *tier
+    environment:
+      TIER: device
+      TIER_CAP: "${DEVICE_CAP:-2}"
+      NETEM_DELAY_MS: "${DEVICE_DELAY_MS:-5}"
+      NETEM_JITTER_MS: "${DEVICE_JITTER_MS:-1}"
+      OLLAMA_BASE: "${OLLAMA_BASE:-http://host.docker.internal:11434}"
+      MODEL: "${MODEL:-mistral:7b-instruct-q4_K_M}"
+    ports: ["8101:8000"]
+
+  edge:
+    <<: *tier
+    environment:
+      TIER: edge
+      TIER_CAP: "${EDGE_CAP:-3}"
+      NETEM_DELAY_MS: "${EDGE_DELAY_MS:-15}"
+      NETEM_JITTER_MS: "${EDGE_JITTER_MS:-3}"
+      OLLAMA_BASE: "${OLLAMA_BASE:-http://host.docker.internal:11434}"
+      MODEL: "${MODEL:-mistral:7b-instruct-q4_K_M}"
+    ports: ["8102:8000"]
+
+  cloud:
+    <<: *tier
+    environment:
+      TIER: cloud
+      TIER_CAP: "${CLOUD_CAP:-5}"
+      NETEM_DELAY_MS: "${CLOUD_DELAY_MS:-50}"
+      NETEM_JITTER_MS: "${CLOUD_JITTER_MS:-10}"
+      OLLAMA_BASE: "${OLLAMA_BASE:-http://host.docker.internal:11434}"
+      MODEL: "${MODEL:-mistral:7b-instruct-q4_K_M}"
+    ports: ["8103:8000"]
+
+networks:
+  emul:
+    driver: bridge

@@ -12,6 +12,10 @@ _targets/
 fig/
 results/
 
+# Python bytecode (emulation harness tests)
+__pycache__/
+*.pyc
+
 # macOS
 .DS_Store
 
@@ -20,7 +24,7 @@ results/
 .cursorrules
 CLAUDE.md
 
-# Internal campaign log + run logs + ad-hoc dev probe (L73 — not for public release)
+# Internal campaign log + run logs + ad-hoc dev probe (not for public release)
 OPSLOG.md
 tar_make_run*.log
 investigate_volatility.R

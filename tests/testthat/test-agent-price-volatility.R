@@ -43,7 +43,12 @@ test_that("integrator_clear records the EMA-smoothed slice price as unit_cost (n
   tasks <- tibble::tibble(
     task_id    = sprintf("t%03d", seq_len(40L)),
     agent_id   = sample.int(5, 40L, replace = TRUE),
-    deadline   = sample(c(100L, 150L, 200L), 40L, replace = TRUE),
+    # Deadlines at the pipeline's set. The old 100/150/200 ms sat below the
+    # bid-time latency ESTIMATE (critical path + alpha * util_hat^p, 222 ms on
+    # sp at util_hat = 0.5), not below the 135 ms critical path itself, so once
+    # the estimate stopped being the constant 50 every expected value here
+    # collapsed to salvage.
+    deadline   = sample(c(500L, 750L, 1000L), 40L, replace = TRUE),
     value_base = runif(40L, 1, 2)
   )
   ic <- integrator_clear(tasks, env, 0.5, blb, init_success_model(), integ, iters = 5L)

@@ -13,7 +13,8 @@
 #               compliant pool, normal tasks to general pool.
 #   - strict:   70/30 capacity split + trust gate (>= 0.75) on sensitive tasks.
 #
-# Paper reference: Section VII-C, Table VI (Exp3).
+# Paper reference: the governance ablation (subsec:exp3-governance), detailed
+# results in app:exp3-detailed (tab:exp3-results).
 # ---------------------------------------------------------------------------
 
 suppressPackageStartupMessages({
@@ -108,7 +109,7 @@ exp3_run_single <- function(policy = c("none", "moderate", "strict"),
                             trust_threshold_strict = 0.75,
                             alpha = 50, p = 1.2,
                             lambda_l_default = 0.005, salvage = 0.0,
-                            iters = 15L, eta = 0.25, success_lr = 0.3) {
+                            iters = 15L, eta = price_eta, success_lr = 0.3) {
   policy     <- match.arg(policy)
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)

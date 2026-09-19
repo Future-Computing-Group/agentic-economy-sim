@@ -15,7 +15,15 @@
   set.seed(seed)
   tibble::tibble(task_id = sprintf("t%03d", seq_len(n)),
                  agent_id = sample.int(5, n, replace = TRUE),
-                 deadline = sample(c(100L, 150L, 200L), n, replace = TRUE),
+                 # Deadlines at the pipeline's set. The old 100/150/200 ms sat below the
+                 # bid-time latency ESTIMATE (critical path + alpha * util_hat^p, 222 ms on
+                 # sp at util_hat = 0.5), not below the 135 ms critical path itself, so once
+                 # the estimate stopped being the constant 50 every expected value here
+                 # collapsed to salvage.
+                 # (Three of the five tests in this file run at reserve_price = 0.1,
+                 # where the fixture clears nothing either way; those are price-floor
+                 # checks that never depended on the deadlines.)
+                 deadline = sample(c(500L, 750L, 1000L), n, replace = TRUE),
                  value_base = runif(n, 1, 2))
 }
 
@@ -49,10 +57,14 @@ test_that("congestion raises the agent-facing cost above the reserve floor (anch
   # a contended cell drives the per-task cost above reserve * Sigma_demand. A
   # single-shot clearing with a fixed util_hat does not exercise cross-round price
   # discovery, so we test on the real simulation path (a contended entangled cell).
+  # The cell must be contended AND still clearing: where demand is so far above
+  # capacity that almost nothing is admitted, the realised per-task cost falls
+  # back to the floor and the test would measure rationing, not congestion.
+  # N = 60 is contended (utilisation ~0.86) and clearing on every seed tried.
   env_e <- init_environment(build_dependency_graph("entangled"), "medium",
-                            n_agents = 75L, graph_type = "entangled")
+                            n_agents = 60L, graph_type = "entangled")
   reserve_floor <- env_e$reserve_price * sum(task_bundle(env_e)$demand)   # 0.04 * 12
-  r <- exp1_run_single("entangled", "medium", seed = 1L, n_agents = 75L, n_rounds = 60L)
+  r <- exp1_run_single("entangled", "medium", seed = 1L, n_agents = 60L, n_rounds = 60L)
   expect_gt(r$mean_unit_cost, reserve_floor + 1e-6)
 })
 

@@ -6,7 +6,7 @@
 #   Figure A: Latency + Drop rate (operational metrics)
 #   Figure B: Welfare + Price volatility (economic metrics)
 #
-# Three architectures (naive, hybrid EMA-only, hybrid full) across SP and
+# The four cells of the architecture x smoothing factorial across SP and
 # entangled topologies, medium and high load, varying N.
 # ---------------------------------------------------------------------------
 
@@ -19,8 +19,11 @@ suppressPackageStartupMessages({
 
 #' Prepare Exp4 raw data with bootstrap CIs for plotting.
 exp4_prepare <- function(raw_df) {
+  # Both dispersion columns are prepared: the panel plots the trimmed one, the
+  # supplement's per-cell table still reports the full run.
   metrics <- c("median_latency", "p95_latency", "drop_rate",
-               "welfare", "mean_price_volatility", "efficiency")
+               "welfare", "mean_price_volatility",
+               "mean_price_volatility_tail", "efficiency")
 
   if ("seed" %in% names(raw_df)) {
     df <- raw_df %>%
@@ -50,18 +53,26 @@ exp4_prepare <- function(raw_df) {
 
   df %>%
     mutate(
+      # The legacy level keeps its place at the end so the experiments that
+      # still run it (the sweep, the overhead and faithfulness studies) plot
+      # through this preparer unchanged.
       architecture = factor(architecture,
-                            levels = c("naive", "hybrid_ema", "hybrid"),
-                            labels = c("Naive", "Hybrid EMA", "Hybrid full")),
+                            levels = c("naive", "naive_ema", "hybrid_noema",
+                                       "hybrid_ema", "hybrid"),
+                            labels = c("Naive", "Naive EMA", "Slice no EMA",
+                                       "Slice EMA", "Hybrid full")),
       graph_type   = factor(graph_type, levels = c("sp", "entangled")),
       load_level   = factor(load_level, levels = c("medium", "high")),
       N            = as.integer(N)
     )
 }
 
-# Linetype + shape for architecture (three levels)
-linetype_arch <- c("Naive" = "solid", "Hybrid EMA" = "dotted", "Hybrid full" = "dashed")
-shape_arch    <- c("Naive" = 16, "Hybrid EMA" = 2, "Hybrid full" = 5)
+# Linetype + shape per cell; smoothing off is solid, smoothing on is broken.
+linetype_arch <- c("Naive" = "solid", "Naive EMA" = "dotted",
+                   "Slice no EMA" = "longdash", "Slice EMA" = "dashed",
+                   "Hybrid full" = "dotdash")
+shape_arch    <- c("Naive" = 16, "Naive EMA" = 1, "Slice no EMA" = 17,
+                   "Slice EMA" = 2, "Hybrid full" = 5)
 
 # Shared legend guides (no titles to save horizontal space)
 exp4_guide_colour <- guide_legend(title = NULL, order = 1)
@@ -129,15 +140,19 @@ plot_exp4_welfare <- function(df) {
 }
 
 #' Panel (d): Price volatility with bootstrap 95% CI.
+#'
+#' Plotted on the burn-in-trimmed column, which is the column the factorial's
+#' decomposition is taken on: a figure and a decomposition that report two
+#' different dispersion measurements invite the second to be read off the first.
 plot_exp4_volatility <- function(df) {
-  ggplot(df, aes(x = N, y = mean_price_volatility_mean,
+  ggplot(df, aes(x = N, y = mean_price_volatility_tail_mean,
                 colour = load_level, linetype = architecture,
                 shape = architecture,
                 group = interaction(architecture, load_level))) +
     geom_line(linewidth = 1.0) +
     geom_point(size = 2.5) +
-    geom_errorbar(aes(ymin = mean_price_volatility_lo,
-                      ymax = mean_price_volatility_hi),
+    geom_errorbar(aes(ymin = mean_price_volatility_tail_lo,
+                      ymax = mean_price_volatility_tail_hi),
                   linewidth = 0.6, width = 2) +
     facet_wrap(~ graph_type, scales = "free_y",
                labeller = labeller(graph_type = c(sp = "SP", entangled = "Entangled"))) +
@@ -146,7 +161,7 @@ plot_exp4_volatility <- function(df) {
     scale_linetype_manual(values = linetype_arch, guide = exp4_guide_arch) +
     scale_shape_manual(values = shape_arch, guide = exp4_guide_arch) +
     labs(x = "Number of agents (N)",
-         y = expression(paste("Price vol. (", sigma, ")"))) +
+         y = expression(atop(paste("Price vol. (", sigma, ")"), "after burn-in"))) +
     theme_ieee()
 }
 

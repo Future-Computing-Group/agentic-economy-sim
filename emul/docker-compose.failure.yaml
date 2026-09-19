@@ -1,0 +1,14 @@
+# Failure-injection overlay. Pins the restart policy to "no" so that
+# `docker compose kill <service>` kills the container permanently rather than
+# letting Docker bring it back. The base stack sets no restart policy either, so
+# this file is an explicit statement of the requirement rather than a change:
+# the failure run cannot silently inherit a restart policy added later.
+#
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.failure.yaml up -d
+services:
+  device:
+    restart: "no"
+  edge:
+    restart: "no"
+  cloud:
+    restart: "no"

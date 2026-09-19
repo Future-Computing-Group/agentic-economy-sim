@@ -43,7 +43,7 @@ exp1_run_single <- function(graph_type = c("linear", "tree", "sp", "entangled"),
                             deadlines = c(500L, 750L, 1000L),
                             alpha = 50, p = 1.2,
                             lambda_l_default = 0.005, salvage = 0.0,
-                            iters = 15L, eta = 0.25, success_lr = 0.3) {
+                            iters = 15L, eta = price_eta, success_lr = 0.3) {
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
   set.seed(seed)

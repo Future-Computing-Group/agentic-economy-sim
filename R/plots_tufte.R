@@ -99,6 +99,9 @@ palette_qual_tufte   <- c("#4878D0", "#EE854A", "#6ACC64", "#956CB4")       # mu
 # so they survive grayscale printing and read the same way as each other.
 linetype_qual_tufte  <- c("solid", "longdash", "dotted", "dotdash")
 .sigp <- expression(paste("Price vol. (", sigma[p], ")"))
+# The Exp.4 factorial reports dispersion after the burn-in, and says so on the
+# axis, because that is the column its decomposition is taken on.
+.sigp_tail <- expression(atop(paste("Price vol. (", sigma[p], ")"), "after burn-in"))
 .bottom <- function(p) p & ggplot2::theme(legend.position = "bottom")
 # Bottom legend wrapped to two rows: for the 4-level nominal figures (exp5/exp6),
 # whose titled colour+shape+linetype keys overflow a single row at column width.
@@ -165,8 +168,9 @@ make_exp4_tufte <- function(raw_df, which = c("a","b")) {
                     width = 0, linewidth = 0.25, alpha = 0.55) +
       facet_wrap(~ graph_type, scales = "free_y") +
       scale_colour_manual(values = palette_load2_tufte, name = "Load") +
-      scale_linetype_manual(values = linetype_arch, name = "Arch.") +
-      scale_shape_manual(values = shape_arch, name = "Arch.") +
+      scale_linetype_manual(values = linetype_arch, name = NULL) +
+      scale_shape_manual(values = shape_arch, name = NULL) +
+      guides(linetype = guide_legend(nrow = 2), shape = guide_legend(nrow = 2)) +
       labs(x = "Agents (N)", y = ylab) + theme_tufte_ieee()
     if (pct) p <- p + scale_y_continuous(labels = percent_format(accuracy = 1))
     p
@@ -176,9 +180,11 @@ make_exp4_tufte <- function(raw_df, which = c("a","b")) {
     p2 <- panel("drop_rate_mean","drop_rate_lo","drop_rate_hi","Drop rate", TRUE)
   } else {
     p1 <- panel("welfare_mean","welfare_lo","welfare_hi","Welfare (a.u.)")
-    p2 <- panel("mean_price_volatility_mean","mean_price_volatility_lo","mean_price_volatility_hi", .sigp)
+    p2 <- panel("mean_price_volatility_tail_mean","mean_price_volatility_tail_lo",
+                "mean_price_volatility_tail_hi", .sigp_tail)
   }
-  .bottom((p1 / p2) + plot_layout(guides = "collect"))
+  .bottom((p1 / p2) + plot_layout(guides = "collect")) &
+    ggplot2::theme(legend.box = "vertical", legend.spacing.y = ggplot2::unit(0, "pt"))
 }
 
 #' Exp5 (Tufte): arch x governance, x = topology, colour/shape/linetype = condition (muted), facet by load.
@@ -231,4 +237,66 @@ make_exp6_tufte <- function(raw_df, arch_filter = "naive") {
   p3 <- panel("drop_rate_mean","drop_rate_lo","drop_rate_hi","Drop rate", TRUE)
   p4 <- panel("median_latency_mean","median_latency_lo","median_latency_hi","Latency (ms)")
   .bottom2((p1 + p2 + p3 + p4) + plot_layout(ncol = 2, guides = "collect"))
+}
+
+# ===========================================================================
+# Exp11 (Tufte): recipe heterogeneity on one fixed DAG
+# ===========================================================================
+
+#' Aggregate Exp.11 per-seed rows to arm x capacity means with normal CIs.
+#'
+#' @param raw_df Per-seed rows from exp11_run_single().
+#' @return A tibble with <metric>_mean / _lo / _hi per arm and capacity.
+exp11_prepare <- function(raw_df) {
+  # A single-seed cell has no spread: the band is NA rather than a zero-width
+  # interval, which would read as certainty.
+  se <- function(x) {
+    n <- sum(is.finite(x))
+    if (n < 2L) NA_real_ else stats::sd(x, na.rm = TRUE) / sqrt(n)
+  }
+  raw_df %>%
+    mutate(arm = factor(arm, levels = exp11_arms())) %>%
+    group_by(arm, cap) %>%
+    summarise(
+      across(c(price_cv, greedy_exact_ratio, admitted_exact_ratio, drop_rate,
+               served_among_admitted),
+             list(mean = \(x) mean(x, na.rm = TRUE),
+                  lo   = \(x) mean(x, na.rm = TRUE) - 1.96 * se(x),
+                  hi   = \(x) mean(x, na.rm = TRUE) + 1.96 * se(x)),
+             .names = "{.col}_{.fn}"),
+      .groups = "drop"
+    )
+}
+
+#' Exp11 (Tufte): x = per-tier capacity, colour/shape/linetype = arm.
+#'
+#' Capacity is the contention knob, and it is the x axis rather than a facet
+#' because the quantity of interest is the arm-to-arm difference AT a contention
+#' level, with demand, DAG and seed held fixed.
+make_exp11_tufte <- function(raw_df) {
+  df <- exp11_prepare(raw_df); dg <- position_dodge(width = 0.25)
+  lv   <- levels(df$arm)
+  cols <- setNames(palette_qual_tufte[seq_along(lv)], lv)
+  ltys <- setNames(linetype_qual_tufte[seq_along(lv)], lv)
+  labs_arm <- exp11_arm_labels()[lv]
+  panel <- function(yc, ylab, pct = FALSE) {
+    p <- ggplot(df, aes(cap, .data[[paste0(yc, "_mean")]], colour = arm,
+                        shape = arm, linetype = arm, group = arm)) +
+      geom_line(linewidth = 0.4, position = dg) + geom_point(size = 1.1, position = dg) +
+      geom_errorbar(aes(ymin = .data[[paste0(yc, "_lo")]],
+                        ymax = .data[[paste0(yc, "_hi")]]),
+                    width = 0, linewidth = 0.25, alpha = 0.55, position = dg) +
+      scale_colour_manual(values = cols, labels = labs_arm, name = NULL) +
+      scale_shape_manual(values = seq_along(lv) + 14L, labels = labs_arm, name = NULL) +
+      scale_linetype_manual(values = ltys, labels = labs_arm, name = NULL) +
+      scale_x_continuous(breaks = sort(unique(df$cap))) +
+      labs(x = "Per-tier capacity", y = ylab) + theme_tufte_ieee()
+    if (pct) p <- p + scale_y_continuous(labels = percent_format(accuracy = 1))
+    p
+  }
+  .bottom2((panel("price_cv", "Price CV") +
+            panel("greedy_exact_ratio", "Value-greedy /\nexact") +
+            panel("drop_rate", "Drop rate", TRUE) +
+            panel("served_among_admitted", "Served of admitted", TRUE)) +
+           plot_layout(ncol = 2, guides = "collect"))
 }
