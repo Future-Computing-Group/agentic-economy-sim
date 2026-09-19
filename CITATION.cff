@@ -3,6 +3,7 @@ message: "If you use this software, please cite the accompanying paper (see pref
 title: "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\""
 type: software
 version: v2.0.0
+doi: 10.5281/zenodo.22842717
 license: MIT
 repository-code: "https://github.com/Future-Computing-Group/agentic-economy-sim"
 keywords:
