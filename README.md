@@ -94,7 +94,7 @@ python3 emul/load_gen.py --replay-dir <replay-dir> --out-dir <run-dir> \
 docker compose -f emul/docker-compose.yaml -f emul/docker-compose.failure.yaml down --remove-orphans
 ```
 
-Both runs assert the model fingerprint and the installed netem qdisc before replaying, and refuse to start if either disagrees with the run's own metadata. The statistics are then computed in R from a run directory: `emul_compare(run_dir, n_boot = 2000)` on the clean run, which refuses a run that contains a kill, and `emul_failure_gap(run_dir)` on the failure run. `emul/smoke_rung1.sh` runs the same path end to end on the sleep transport, in three rounds, with no model server needed.
+Both runs assert the model fingerprint and the installed netem qdisc before replaying, and refuse to start if either disagrees with the run's own metadata. The statistics are then computed in R from a run directory: `emul_compare(run_dir, n_boot = 2000)` on the clean run, which refuses a run that contains a kill, and `emul_failure_gap(run_dir)` on the failure run. `emul/smoke.sh` runs the same path end to end on the sleep transport, in three rounds, with no model server needed.
 
 
 ## File structure

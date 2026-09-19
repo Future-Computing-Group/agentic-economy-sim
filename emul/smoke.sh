@@ -5,7 +5,7 @@
 # containers, and that a replayed round produces well-formed records behind a
 # barrier.
 #
-# Usage: EMUL_RUNS_DIR=/path/outside/the/repo/runs/emulation ./smoke_rung1.sh
+# Usage: EMUL_RUNS_DIR=/path/outside/the/repo/runs/emulation ./smoke.sh
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
@@ -217,5 +217,5 @@ sys.exit(1 if fails else 0)
 PY
 check $? "records well formed and the round barrier held" "see defects above"
 
-echo "smoke_rung1.sh: $PASS passed, $FAIL failed  (run data: $OUT_DIR)"
+echo "smoke.sh: $PASS passed, $FAIL failed  (run data: $OUT_DIR)"
 [ "$FAIL" -eq 0 ]

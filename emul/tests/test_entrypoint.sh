@@ -7,7 +7,7 @@
 # also shapes the container's egress to the shared inference backend, so every
 # stage call pays the tier delay a second time on a path the simulator does not
 # model at all. The tc command lines are asserted here because they are the
-# whole of that decision; the container-level evidence is in smoke_rung1.sh.
+# whole of that decision; the container-level evidence is in smoke.sh.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ENTRYPOINT="$HERE/../entrypoint.sh"
