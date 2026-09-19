@@ -27,7 +27,23 @@ exp14_reduction_one <- function(graph_type, load_level, N, seed,
                                 lambda_l_default = 0.005,
                                 n_rounds = 200L,
                                 deadlines = c(500L, 750L, 1000L),
-                                vol_floor = 0.02) {
+                                vol_floor = 0.02,
+                                substrate = c("tier", "node")) {
+  substrate <- match.arg(substrate)
+  if (substrate == "node") {
+    # The encapsulated arm on this substrate is the contraction, and what an
+    # integrator can assume about it is how much of the aggregate its internal
+    # routing carries: that is what the efficiency knob sweeps here.
+    common <- list(
+      graph_type = graph_type, load_level = load_level, N = as.integer(N),
+      seed = as.integer(seed), n_rounds = n_rounds, deadlines = deadlines,
+      lambda_l_default = lambda_l_default, eta = integ_eta,
+      cap_scale = cap_scale,
+      advertise_frac = node_advertise_frac(integ_efficiency))
+    naive  <- do.call(node_run_single, c(list(architecture = "naive"), common))
+    hybrid <- do.call(node_run_single,
+                      c(list(architecture = "hybrid_ema"), common))
+  } else {
   common <- list(
     graph_type = graph_type, load_level = load_level, N = as.integer(N),
     seed = as.integer(seed), n_rounds = n_rounds, deadlines = deadlines,
@@ -36,6 +52,7 @@ exp14_reduction_one <- function(graph_type, load_level, N, seed,
   )
   naive  <- do.call(exp4_run_single, c(list(architecture = "naive"),  common))
   hybrid <- do.call(exp4_run_single, c(list(architecture = "hybrid"), common))
+  }
   s_naive  <- naive$mean_price_volatility[1]
   s_hybrid <- hybrid$mean_price_volatility[1]
   if (is.na(s_naive) || s_naive <= vol_floor) return(NA_real_)
@@ -103,12 +120,16 @@ exp14_sweep_grid <- function() {
 #'
 #' @return A one-row data frame: parameter, level, is_baseline, n_volatile,
 #'   median_reduction, min_reduction, max_reduction.
+#' @param substrate "tier" for the per-tier environments, "node" for the
+#'   leaf-block instances.
 exp14_sensitivity_row <- function(parameter, level,
                                   topologies = c("sp", "entangled"),
                                   seeds = 1:5,
                                   N = 60L,
                                   load_level = "high",
-                                  n_rounds = 200L) {
+                                  n_rounds = 200L,
+                                  substrate = c("tier", "node")) {
+  substrate <- match.arg(substrate)
   args_over <- exp14_baseline()
   stopifnot("not a sensitivity parameter" = parameter %in% names(args_over))
   args_over[[parameter]] <- level
@@ -123,7 +144,7 @@ exp14_sensitivity_row <- function(parameter, level,
       integ_efficiency = args_over$integ_efficiency,
       integ_eta = args_over$integ_eta,
       lambda_l_default = args_over$lambda_l_default,
-      n_rounds = n_rounds
+      n_rounds = n_rounds, substrate = substrate
     )
   }, grid$topology, grid$seed)
   reductions <- reductions[!is.na(reductions)]

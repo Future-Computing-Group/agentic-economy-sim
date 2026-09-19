@@ -668,14 +668,18 @@ matched_controls <- function(spec) {
 #' @param advertise "inner" or "maxflow".
 #' @param name      Label for the contracted node.
 #' @return An instance spec whose leaf-block family is laminar.
+#' @param scalar    Advertised token capacity, overriding what `advertise`
+#'                  would compute. A sensitivity sweep over how much of the
+#'                  aggregate an integrator claims to route is a sweep over
+#'                  this number.
 contract_cluster <- function(spec, cluster, advertise = c("inner", "maxflow"),
-                             name = "J") {
+                             name = "J", scalar = NULL) {
   advertise <- match.arg(advertise)
   anc  <- ancestor_matrix(spec)
   Ctok <- token_capacity(spec)
   L_J  <- rownames(anc)[rowSums(anc[, cluster, drop = FALSE]) > 0]
 
-  scalar <- switch(advertise,
+  scalar <- scalar %||% switch(advertise,
     inner = min(vapply(L_J, function(l)
       sum(Ctok[cluster[anc[l, cluster] > 0]]), numeric(1))),
     maxflow = {

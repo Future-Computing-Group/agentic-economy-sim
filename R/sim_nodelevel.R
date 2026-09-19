@@ -184,12 +184,93 @@ node_cluster <- function(graph_type) {
 #' @param interface  "off", "inner" or "maxflow".
 #' @return An environment list.
 node_run_env <- function(graph_type, load_level, N, leaf_mix = "uniform",
-                         interface = "off") {
+                         interface = "off", advertise_frac = NULL) {
   spec <- node_instance(graph_type)
   if (interface != "off") {
-    spec <- contract_cluster(spec, node_cluster(graph_type), interface)
+    cl <- node_cluster(graph_type)
+    spec <- contract_cluster(
+      spec, cl, interface,
+      scalar = if (is.null(advertise_frac)) NULL
+               else node_advertised_scalar(spec, cl, advertise_frac))
   }
   node_env(graph_type, load_level, N, leaf_mix, spec = spec)
+}
+
+#' An advertised scalar between the safe one and the aggregate.
+#'
+#' At 0 the interface advertises what every mix of it can be delivered; at 1 it
+#' advertises the cluster's own node-split max flow, which is deliverable in
+#' the best mix and not in the worst. In between it claims that its internal
+#' routing carries that share of the difference.
+#'
+#' @param spec    An instance spec.
+#' @param cluster The nodes the integrator exports.
+#' @param frac    Share of the gap between the two scalars, in [0, 1].
+#' @return Scalar token capacity.
+node_advertised_scalar <- function(spec, cluster, frac) {
+  inner <- token_capacity(contract_cluster(spec, cluster, "inner"))[["J"]]
+  mf    <- token_capacity(contract_cluster(spec, cluster, "maxflow"))[["J"]]
+  inner + frac * (mf - inner)
+}
+
+#' The sensitivity sweep's encapsulation knob, on this substrate.
+#'
+#' The per-tier knob is an assumed reduction in a task's demand, which a
+#' node-level market has no place for: every arm charges the recipe the tokens
+#' actually place. What an integrator can assume here is that its internal
+#' routing carries more of the aggregate than the safe scalar, so the level is
+#' read as the share of the safe scalar it claims to need. At the baseline of
+#' 1.0 it assumes nothing and advertises the safe one, exactly as the per-tier
+#' baseline assumes no savings.
+#'
+#' @param integ_efficiency A level of the per-tier efficiency knob.
+#' @return The advertised fraction, in [0, 1].
+node_advertise_frac <- function(integ_efficiency) 1 - integ_efficiency
+
+
+# ===========================================================================
+# The population sweep
+# ===========================================================================
+
+#' The populations the sweep steps over.
+#'
+#' Twenty points at a step of ten, refined to a step of five around every arm's
+#' onset. A grid that steps by ten past a boundary at 67 states a coincidence
+#' at ten per cent resolution; these brackets put every onset inside a window
+#' of five, which is five per cent of the populations in question.
+#'
+#' @return Sorted numeric vector of 28 populations.
+node_sweep_points <- function() {
+  sort(union(union(seq(10, 200, by = 10), c(35, 45, 55, 65, 75)),
+             c(95, 105, 115)))
+}
+
+#' The sweep's branch grid.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_sweep_grid <- function(n_seeds) {
+  tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     N          = node_sweep_points(),
+                     load_level = c("medium", "high"),
+                     seed       = seq_len(n_seeds))
+}
+
+#' Bottleneck offered load of a node instance at one population and load.
+#'
+#' The onset statistic is read against this rather than against the per-tier
+#' function, because a node-indexed environment's busiest RESOURCE is a service
+#' node and its demand weights depend on the cell's leaf mix.
+#'
+#' @param graph_type One of "tree", "sp", "entangled".
+#' @param n_agents   Agent population.
+#' @param load_level One of "low", "medium", "high".
+#' @param leaf_mix   One of "uniform", "skewed".
+#' @return Scalar offered load.
+node_rho_bottleneck <- function(graph_type, n_agents, load_level = "high",
+                                leaf_mix = "uniform") {
+  rho_bottleneck(graph_type, n_agents, load_level,
+                 env = node_run_env(graph_type, load_level, n_agents, leaf_mix))
 }
 
 #' The instance spec at the environment's EFFECTIVE capacities.
@@ -614,6 +695,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
                             mechanism = c("market", "random", "edf",
                                           "greedy_ev", "posted_price", "k8s"),
                             p_post_k = 1,
+                            advertise_frac = NULL, cap_scale = 1.0,
                             exact_reference = TRUE,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3) {
@@ -633,8 +715,11 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   # Two environments, and the difference between them IS the interface: the
   # market clears against the ADVERTISED region and delivery is evaluated
   # against the TRUE instance. At interface "off" they are the same region.
-  env_true <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
-  env_adv  <- node_run_env(graph_type, load_level, N, leaf_mix, interface)
+  env_true <- scale_capacities(
+    node_run_env(graph_type, load_level, N, leaf_mix, "off"), cap_scale)
+  env_adv  <- scale_capacities(
+    node_run_env(graph_type, load_level, N, leaf_mix, interface,
+                 advertise_frac), cap_scale)
   agents   <- init_agents(N)
   providers <- leaf_providers(agents, rownames(env_true$anc))
 

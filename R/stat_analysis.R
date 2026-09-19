@@ -398,10 +398,15 @@ stat_exp1 <- function(raw_df) {
 #' an offered load is.
 #'
 #' @param raw_df Per-seed results from the Exp.2 sweeps.
+#' @param rho_fn Function of (graph_type, n_agents, load_level) returning the
+#'   bottleneck offered load. The default rebuilds a per-tier environment from
+#'   the topology name; a node-indexed arm's busiest resource is a service node
+#'   and its weights depend on the cell's leaf mix, so that arm hands in its
+#'   own.
 #' @return A tibble, one row per (graph_type, load_level): N_onset (NA when no N
 #'   in the grid leaves zero), seeds_nonzero_at_onset, n_seeds_at_onset,
 #'   rho_onset, N_onset_all_seeds, rho_onset_all_seeds.
-exp2_price_onset <- function(raw_df) {
+exp2_price_onset <- function(raw_df, rho_fn = rho_bottleneck) {
   raw_df %>%
     group_by(.data$graph_type, .data$load_level, .data$N) %>%
     summarise(
@@ -419,12 +424,12 @@ exp2_price_onset <- function(raw_df) {
       seeds_nonzero_at_onset = .data$frac_nonzero[i],
       n_seeds_at_onset       = .data$n_seeds[i],
       rho_onset              = if (is.na(i)) NA_real_ else
-        rho_bottleneck(dplyr::cur_group()$graph_type, .data$N[i],
-                       dplyr::cur_group()$load_level),
+        rho_fn(dplyr::cur_group()$graph_type, .data$N[i],
+               dplyr::cur_group()$load_level),
       N_onset_all_seeds      = .data$N[j],
       rho_onset_all_seeds    = if (is.na(j)) NA_real_ else
-        rho_bottleneck(dplyr::cur_group()$graph_type, .data$N[j],
-                       dplyr::cur_group()$load_level),
+        rho_fn(dplyr::cur_group()$graph_type, .data$N[j],
+               dplyr::cur_group()$load_level),
       .groups                = "drop"
     ) %>%
     select(-"i", -"j")
@@ -438,7 +443,8 @@ exp2_price_onset <- function(raw_df) {
 #' @return A list: Spearman correlations per topology, the price-dispersion
 #'   onset table per (topology, load), and one element per (topology, load) cell
 #'   in the shape make_stats_report harvests.
-stat_exp2 <- function(raw_df) {
+#' @param rho_fn Offered-load function, passed through to exp2_price_onset.
+stat_exp2 <- function(raw_df, rho_fn = rho_bottleneck) {
   metrics <- c("median_latency", "drop_rate", "utilisation",
                "mean_price_volatility", "welfare")
 
@@ -454,7 +460,7 @@ stat_exp2 <- function(raw_df) {
     }) %>% bind_rows()
   })
 
-  onset <- exp2_price_onset(raw_df)
+  onset <- exp2_price_onset(raw_df, rho_fn = rho_fn)
   # One cell per (topology, load): the onset is only comparable across arms
   # once the load it was measured at travels with it.
   cells <- paste(onset$graph_type, onset$load_level, sep = "_")
