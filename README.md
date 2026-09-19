@@ -143,6 +143,10 @@ All parameters are set in `_targets.R`.
 | `integ_efficiency_ent` | 1.0 | Integrator efficiency, entangled topology |
 | `integ_eta` | 0.15 | Slice price step; the common `price_eta`, used by every arm |
 
+## AI assistance
+
+Generative AI tools (Claude, Anthropic) were used under the authors' direction to write and test parts of this code and its documentation. The authors reviewed and verified all of it and take full responsibility for it.
+
 ## Citation
 
 If you use this code, please cite:
