@@ -1,8 +1,8 @@
 """the emulated agent sends byte-identical prompts to the released harness.
 
 The load generator duplicates the harness's inline f-strings (it cannot import
-them: they are built inside run_one). This test drives the harness's own
-run_one with a stub transport, captures the four prompts it emits, and asserts
+them: they are built inside run_one_a). This test drives the harness's own
+run_one_a with a stub transport, captures the four prompts it emits, and asserts
 the generator reproduces them byte for byte. An edit to either side fails here.
 """
 import importlib.util
@@ -29,14 +29,14 @@ def harness_prompts(plan_text):
     mod = harness_module()
     seen = []
 
-    def stub_call(model, prompt, timeout=120):
+    def stub_call(model, prompt, *rest, **kw):
         seen.append(prompt)
         if len(seen) == 1:
             return 1.0, 7, plan_text
         return 1.0, 7, ANSWERS[min(len(seen) - 2, len(ANSWERS) - 1)]
 
     mod.call = stub_call
-    mod.run_one("stub-model", QUESTION)
+    mod.run_one_a("stub-model", QUESTION, "http://stub/api/generate")
     return seen
 
 

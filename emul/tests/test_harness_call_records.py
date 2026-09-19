@@ -23,9 +23,9 @@ PLAN = "first sub-question\nsecond sub-question\n"
 
 class StubBackend(BaseHTTPRequestHandler):
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        raw = json.dumps({"response": PLAN, "prompt_eval_count": 5,
-                          "eval_count": 9}).encode()
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+        raw = json.dumps({"model": body["model"], "response": PLAN,
+                          "prompt_eval_count": 5, "eval_count": 9}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(raw)))
@@ -40,7 +40,7 @@ class TestCallRecords(unittest.TestCase):
     def setUp(self):
         self.srv = HTTPServer(("127.0.0.1", 0), StubBackend)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
-        self.url = "http://127.0.0.1:%d/api/generate" % self.srv.server_address[1]
+        self.host = "http://127.0.0.1:%d" % self.srv.server_address[1]
 
     def tearDown(self):
         self.srv.shutdown()
@@ -50,10 +50,10 @@ class TestCallRecords(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("harness_records", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        mod.OLLAMA = self.url
         out = Path(tempfile.mkdtemp()) / "profile.json"
         argv = sys.argv
-        sys.argv = ["run_agent_workload.py", "--model", "stub", "--n", str(n), "--out", str(out)]
+        sys.argv = ["run_agent_workload.py", "--model", "stub", "--n", str(n),
+                    "--host", self.host, "--out", str(out)]
         try:
             with contextlib.redirect_stdout(io.StringIO()):
                 mod.main()
@@ -66,7 +66,8 @@ class TestCallRecords(unittest.TestCase):
         calls = profile["calls"]
         self.assertEqual(len(calls), 8)  # 4 stages per task, 2 tasks
         for c in calls:
-            self.assertEqual(sorted(c), ["latency_ms", "t_start", "tokens"])
+            self.assertEqual(sorted(c), ["latency_ms", "model", "parents",
+                                         "stage", "t_start", "tier", "tokens"])
             self.assertEqual(c["tokens"], 14)
             self.assertGreater(c["latency_ms"], 0)
         self.assertEqual([c["t_start"] for c in calls],
@@ -75,7 +76,7 @@ class TestCallRecords(unittest.TestCase):
     def test_per_run_stages_present(self):
         profile = self.run_harness(n=2)
         self.assertEqual(len(profile["runs"]), 2)
-        self.assertEqual(sorted(profile["runs"][0]), ["aggregate", "plan", "tool_0", "tool_1"])
+        self.assertEqual(sorted(profile["runs"][0]), ["aggregate", "plan", "tool0", "tool1"])
         self.assertEqual(profile["runs"][0]["plan"]["tier"], "device")
 
     def test_existing_keys_untouched(self):

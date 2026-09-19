@@ -81,14 +81,32 @@ class TestPerTaskAggregation(unittest.TestCase):
         self.assertEqual(new["tiers"]["edge"]["mean_latency_ms"], 1016.29)
         self.assertEqual(new["tiers"]["edge"]["n_stage_calls"], 10)
 
-    def test_the_shipped_profile_carries_the_per_task_weights(self):
-        profile = json.loads(
-            (_ctx.REPO / "agentic" / "agentic_profile.json").read_text())
-        tiers = profile["tiers"]
-        self.assertEqual(tiers["edge"]["mean_tokens_per_task"], 144.8)
-        self.assertEqual(
-            {t: tiers[t]["demand_weight"] for t in ("device", "edge", "cloud")},
-            {"device": 1.0, "edge": 1.81, "cloud": 2.03})
+    def test_the_shipped_profiles_are_recomputable_from_their_own_records(self):
+        """A shipped weight is what the shipped records produce.
+
+        The profiles are regenerable measurements, so the pin is the identity
+        between a profile's aggregates and its own per-stage records rather
+        than a fixed numeral a re-recording would have to be edited around.
+        A hand-edited weight, or a graph typed beside the records instead of
+        derived from them, fails here.
+        """
+        for name in ("agentic_profile.json", "agentic_profile_b.json"):
+            profile = json.loads((_ctx.REPO / "agentic" / name).read_text())
+            again = harness.rederive(profile)
+            for block in ("tiers", "aggregate_stages", "graph"):
+                self.assertEqual(again[block], profile[block], name)
+            weights = {t: b["demand_weight"] for t, b in profile["tiers"].items()}
+            self.assertEqual(sorted(weights), ["cloud", "device", "edge"], name)
+            self.assertEqual(min(weights.values()), 1.0, name)
+
+    def test_the_two_shipped_profiles_are_the_two_patterns(self):
+        want = {"agentic_profile.json": ("a", ["aggregate"]),
+                "agentic_profile_b.json": ("b", ["summary", "citations"])}
+        for name, (pattern, leaves) in want.items():
+            profile = json.loads((_ctx.REPO / "agentic" / name).read_text())
+            self.assertEqual(profile["pattern"], pattern)
+            self.assertEqual(profile["graph"]["leaves"], leaves)
+            self.assertEqual(profile["model"], "mistral:7b-instruct-q4_K_M")
 
 
 if __name__ == "__main__":

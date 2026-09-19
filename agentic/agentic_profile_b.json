@@ -1,0 +1,602 @@
+{
+  "model": "mistral:7b-instruct-q4_K_M",
+  "host": "http://localhost:11434",
+  "pattern": "b",
+  "n_tasks": 5,
+  "runs": [
+    {
+      "plan_b": {
+        "latency_ms": 766.3500308990479,
+        "tokens": 77,
+        "tier": "device",
+        "parents": []
+      },
+      "retrieve": {
+        "latency_ms": 6280.1361083984375,
+        "tokens": 241,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 657.785177230835,
+        "tokens": 44,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "summary": {
+        "latency_ms": 4956.3610553741455,
+        "tokens": 435,
+        "tier": "cloud",
+        "parents": [
+          "retrieve",
+          "tool1"
+        ]
+      },
+      "citations": {
+        "latency_ms": 2786.2699031829834,
+        "tokens": 309,
+        "tier": "cloud",
+        "parents": [
+          "retrieve"
+        ]
+      }
+    },
+    {
+      "plan_b": {
+        "latency_ms": 817.1000480651855,
+        "tokens": 80,
+        "tier": "device",
+        "parents": []
+      },
+      "retrieve": {
+        "latency_ms": 6716.1009311676025,
+        "tokens": 271,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 3184.522867202759,
+        "tokens": 150,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "summary": {
+        "latency_ms": 3281.4130783081055,
+        "tokens": 483,
+        "tier": "cloud",
+        "parents": [
+          "retrieve",
+          "tool1"
+        ]
+      },
+      "citations": {
+        "latency_ms": 3155.4811000823975,
+        "tokens": 359,
+        "tier": "cloud",
+        "parents": [
+          "retrieve"
+        ]
+      }
+    },
+    {
+      "plan_b": {
+        "latency_ms": 1139.1668319702148,
+        "tokens": 98,
+        "tier": "device",
+        "parents": []
+      },
+      "retrieve": {
+        "latency_ms": 8234.545946121216,
+        "tokens": 354,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 1123.805046081543,
+        "tokens": 72,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "summary": {
+        "latency_ms": 4918.514013290405,
+        "tokens": 554,
+        "tier": "cloud",
+        "parents": [
+          "retrieve",
+          "tool1"
+        ]
+      },
+      "citations": {
+        "latency_ms": 3217.633008956909,
+        "tokens": 426,
+        "tier": "cloud",
+        "parents": [
+          "retrieve"
+        ]
+      }
+    },
+    {
+      "plan_b": {
+        "latency_ms": 1608.4918975830078,
+        "tokens": 117,
+        "tier": "device",
+        "parents": []
+      },
+      "retrieve": {
+        "latency_ms": 2878.4658908843994,
+        "tokens": 143,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 956.6781520843506,
+        "tokens": 77,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "summary": {
+        "latency_ms": 1495.4769611358643,
+        "tokens": 206,
+        "tier": "cloud",
+        "parents": [
+          "retrieve",
+          "tool1"
+        ]
+      },
+      "citations": {
+        "latency_ms": 2501.7480850219727,
+        "tokens": 219,
+        "tier": "cloud",
+        "parents": [
+          "retrieve"
+        ]
+      }
+    },
+    {
+      "plan_b": {
+        "latency_ms": 892.0209407806396,
+        "tokens": 82,
+        "tier": "device",
+        "parents": []
+      },
+      "retrieve": {
+        "latency_ms": 4294.657945632935,
+        "tokens": 179,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 1066.335916519165,
+        "tokens": 66,
+        "tier": "edge",
+        "parents": [
+          "plan_b"
+        ]
+      },
+      "summary": {
+        "latency_ms": 2815.5808448791504,
+        "tokens": 313,
+        "tier": "cloud",
+        "parents": [
+          "retrieve",
+          "tool1"
+        ]
+      },
+      "citations": {
+        "latency_ms": 2893.8539028167725,
+        "tokens": 264,
+        "tier": "cloud",
+        "parents": [
+          "retrieve"
+        ]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "stage": "plan_b",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847024.482485,
+      "latency_ms": 766.3500308990479,
+      "tokens": 77,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "retrieve",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847025.2488809,
+      "latency_ms": 6280.1361083984375,
+      "tokens": 241,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847031.529106,
+      "latency_ms": 657.785177230835,
+      "tokens": 44,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "summary",
+      "parents": [
+        "retrieve",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847032.186938,
+      "latency_ms": 4956.3610553741455,
+      "tokens": 435,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "citations",
+      "parents": [
+        "retrieve"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847037.1433501,
+      "latency_ms": 2786.2699031829834,
+      "tokens": 309,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan_b",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847039.9296708,
+      "latency_ms": 817.1000480651855,
+      "tokens": 80,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "retrieve",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847040.746818,
+      "latency_ms": 6716.1009311676025,
+      "tokens": 271,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847047.463017,
+      "latency_ms": 3184.522867202759,
+      "tokens": 150,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "summary",
+      "parents": [
+        "retrieve",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847050.647584,
+      "latency_ms": 3281.4130783081055,
+      "tokens": 483,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "citations",
+      "parents": [
+        "retrieve"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847053.929041,
+      "latency_ms": 3155.4811000823975,
+      "tokens": 359,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan_b",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847057.084574,
+      "latency_ms": 1139.1668319702148,
+      "tokens": 98,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "retrieve",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847058.2237911,
+      "latency_ms": 8234.545946121216,
+      "tokens": 354,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847066.45838,
+      "latency_ms": 1123.805046081543,
+      "tokens": 72,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "summary",
+      "parents": [
+        "retrieve",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847067.582229,
+      "latency_ms": 4918.514013290405,
+      "tokens": 554,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "citations",
+      "parents": [
+        "retrieve"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847072.500789,
+      "latency_ms": 3217.633008956909,
+      "tokens": 426,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan_b",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847075.718462,
+      "latency_ms": 1608.4918975830078,
+      "tokens": 117,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "retrieve",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847077.326997,
+      "latency_ms": 2878.4658908843994,
+      "tokens": 143,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847080.205512,
+      "latency_ms": 956.6781520843506,
+      "tokens": 77,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "summary",
+      "parents": [
+        "retrieve",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847081.16223,
+      "latency_ms": 1495.4769611358643,
+      "tokens": 206,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "citations",
+      "parents": [
+        "retrieve"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847082.657752,
+      "latency_ms": 2501.7480850219727,
+      "tokens": 219,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan_b",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847085.1595662,
+      "latency_ms": 892.0209407806396,
+      "tokens": 82,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "retrieve",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847086.0516381,
+      "latency_ms": 4294.657945632935,
+      "tokens": 179,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan_b"
+      ],
+      "tier": "edge",
+      "t_start": 1789847090.346334,
+      "latency_ms": 1066.335916519165,
+      "tokens": 66,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "summary",
+      "parents": [
+        "retrieve",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847091.412713,
+      "latency_ms": 2815.5808448791504,
+      "tokens": 313,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "citations",
+      "parents": [
+        "retrieve"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847094.228336,
+      "latency_ms": 2893.8539028167725,
+      "tokens": 264,
+      "model": "mistral:7b-instruct-q4_K_M"
+    }
+  ],
+  "structure": "plan -> retrieval beside the shared tool call -> summary, citations",
+  "response_digest": "6349ecf01a556048f4d23e295eab1c02b56fce396be0b4b7c1b17cc865234de0",
+  "graph": {
+    "nodes": [
+      {
+        "id": "plan_b",
+        "tier": "device"
+      },
+      {
+        "id": "retrieve",
+        "tier": "edge"
+      },
+      {
+        "id": "tool1",
+        "tier": "edge"
+      },
+      {
+        "id": "summary",
+        "tier": "cloud"
+      },
+      {
+        "id": "citations",
+        "tier": "cloud"
+      }
+    ],
+    "edges": [
+      {
+        "from": "plan_b",
+        "to": "retrieve"
+      },
+      {
+        "from": "plan_b",
+        "to": "tool1"
+      },
+      {
+        "from": "retrieve",
+        "to": "summary"
+      },
+      {
+        "from": "tool1",
+        "to": "summary"
+      },
+      {
+        "from": "retrieve",
+        "to": "citations"
+      }
+    ],
+    "leaves": [
+      "summary",
+      "citations"
+    ]
+  },
+  "tiers": {
+    "device": {
+      "mean_tokens": 90.8,
+      "mean_tokens_per_task": 90.8,
+      "mean_latency_ms": 1044.6259498596191,
+      "n_stage_calls": 5,
+      "demand_weight": 1.0
+    },
+    "edge": {
+      "mean_tokens": 159.7,
+      "mean_tokens_per_task": 319.4,
+      "mean_latency_ms": 3539.303398132324,
+      "n_stage_calls": 10,
+      "demand_weight": 3.52
+    },
+    "cloud": {
+      "mean_tokens": 356.8,
+      "mean_tokens_per_task": 713.6,
+      "mean_latency_ms": 3202.2331953048706,
+      "n_stage_calls": 10,
+      "demand_weight": 7.86
+    }
+  },
+  "aggregate_stages": {
+    "plan_b": {
+      "tier": "device",
+      "mean_tokens": 90.8,
+      "mean_tokens_per_task": 90.8,
+      "mean_latency_ms": 1044.6259498596191,
+      "n_stage_calls": 5,
+      "demand_weight": 1.11
+    },
+    "retrieve": {
+      "tier": "edge",
+      "mean_tokens": 237.6,
+      "mean_tokens_per_task": 237.6,
+      "mean_latency_ms": 5680.781364440918,
+      "n_stage_calls": 5,
+      "demand_weight": 2.9
+    },
+    "tool1": {
+      "tier": "edge",
+      "mean_tokens": 81.8,
+      "mean_tokens_per_task": 81.8,
+      "mean_latency_ms": 1397.8254318237305,
+      "n_stage_calls": 5,
+      "demand_weight": 1.0
+    },
+    "summary": {
+      "tier": "cloud",
+      "mean_tokens": 398.2,
+      "mean_tokens_per_task": 398.2,
+      "mean_latency_ms": 3493.469190597534,
+      "n_stage_calls": 5,
+      "demand_weight": 4.87
+    },
+    "citations": {
+      "tier": "cloud",
+      "mean_tokens": 315.4,
+      "mean_tokens_per_task": 315.4,
+      "mean_latency_ms": 2910.997200012207,
+      "n_stage_calls": 5,
+      "demand_weight": 3.86
+    }
+  }
+}
