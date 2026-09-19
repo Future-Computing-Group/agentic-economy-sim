@@ -251,6 +251,11 @@ misreport_strategy_set <- function(ev_focal) {
 #' heterogeneous-recipe experiment therefore lives on its own branch and this
 #' guard is the contract between the two.
 #'
+#' An environment whose `dsic_status` carries a certifier's verdict is past the
+#' guard: the identical bundle is sufficient for exactness and not necessary
+#' for it, and dsic_certificate() computes the property the bundle test stood
+#' in for. Every other refusal is unchanged.
+#'
 #' @param env   Environment list from init_environment().
 #' @param tasks Optional task tibble to check alongside the environment.
 #' @return TRUE invisibly; stops with an informative error otherwise.
@@ -259,6 +264,9 @@ exp7_require_identical_bundles <- function(env, tasks = NULL) {
                "value-greedy is the exact welfare argmax only when every task carries",
                "the same per-tier bundle, which is what makes vcg_allocate DSIC here.",
                "Run the heterogeneous-recipe arm in its own experiment.")
+  if (any(env$dsic_status %in% c("certified", "uncertified"))) {
+    return(invisible(TRUE))
+  }
   if (!is.null(env$recipes)) {
     stop("exp7: heterogeneous-recipe environment refused (env$recipes is present). ",
          why, call. = FALSE)

@@ -275,3 +275,34 @@ test_that("the four-mechanism figure keeps only its four arms", {
                   c("Random", "EDF", "Greedy EV", "Market"))
   expect_false(any(is.na(df$mechanism)))
 })
+
+
+# ---- one price per task: the payment follows the packer's own choice --------
+
+test_that("a per-task posted price charges each winner its own price", {
+  # The screen is elementwise already, but the packer returns strictly fewer
+  # rows than the screen keeps, so a payment column written from the screened
+  # vector lands on the wrong tasks. The payment has to be indexed by the rows
+  # the packer chose.
+  env   <- pp_env_saturated(cap = 30)
+  tasks <- pp_tasks()
+  ev    <- pp_ev(tasks, env)
+  p_vec <- seq(min(ev) / 4, min(ev) / 2, length.out = nrow(tasks))
+
+  alloc <- posted_price_allocate(tasks, env, ev, p_vec)
+
+  expect_gt(nrow(alloc), 0)
+  expect_lt(nrow(alloc), sum(ev > p_vec))          # the packer really did ration
+  expect_equal(alloc$payment, p_vec[match(alloc$task_id, tasks$task_id)])
+})
+
+test_that("a scalar posted price still behaves exactly as before", {
+  env   <- pp_env()
+  tasks <- pp_tasks()
+  ev    <- pp_ev(tasks, env)
+  p     <- stats::median(ev)
+
+  alloc <- posted_price_allocate(tasks, env, ev, p)
+  expect_true(all(alloc$payment == p))
+  expect_setequal(alloc$task_id, tasks$task_id[ev > p])
+})

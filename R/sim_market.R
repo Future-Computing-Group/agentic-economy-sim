@@ -736,6 +736,45 @@ greedy_alloc_set <- function(ev, tasks_all, env) {
   )
 }
 
+#' Certify that value-greedy is the exact welfare maximiser on an environment.
+#'
+#' Two conditions, both computed and neither assumed.
+#'
+#'   1. The leaf-block region of the environment's own capacities -- AFTER any
+#'      governance cap and after any contraction, since both live in
+#'      env$capacities -- is a polymatroid: its rank function is normalised,
+#'      monotone and submodular.
+#'   2. Demand is unit leaf-token: every task's recipe is the token weight
+#'      times exactly one leaf's ancestor indicator.
+#'
+#' Under the two, greedy over the pooled marginals is the argmax, which is what
+#' the identical-bundle test was a proxy for. The rank comes from leaf_rank,
+#' which prunes on a cover bound rather than enumerating the capacity box, so
+#' it costs hundredths of a second at the evaluation capacities.
+#'
+#' An environment that carries no instance spec is not certifiable and returns
+#' FALSE: the region it clears over is not described anywhere.
+#'
+#' @param env       Environment list carrying `spec`, the instance it was built
+#'                  from, and `recipes`.
+#' @param tasks_all Tibble of the round's tasks, carrying a `recipe` column.
+#' @return TRUE when both conditions hold on this round's region and tasks.
+dsic_certificate <- function(env, tasks_all) {
+  if (is.null(env$spec)) return(FALSE)
+  anc <- ancestor_matrix(env$spec)
+  cap <- tier_capacities(env)
+  C   <- setNames(cap$capacity, cap$tier)[colnames(anc)] / env$spec$weight
+  cert <- polymatroid_certificate(leaf_rank(anc, C), rownames(anc))
+
+  A <- task_recipes(tasks_all, env)[, colnames(anc), drop = FALSE]
+  unit_rows <- env$spec$weight * anc
+  unit <- nrow(A) == 0L || all(apply(A, 1, function(r)
+    any(apply(unit_rows, 1, function(u)
+      isTRUE(all.equal(unname(r), unname(u)))))))
+
+  isTRUE(all(cert)) && isTRUE(unit)
+}
+
 #' Clarke-pivot VCG allocation + payments (DSIC mechanism for Exp.7a).
 #'
 #' Ported from the same-author P2A sibling credible-marketplace-sim/R/sim_market.R
@@ -751,20 +790,25 @@ vcg_allocate <- function(tasks_all, env, util_hat, base_latency, success_model,
                          alpha = 200, p = 1.2,
                          lambda_l_default = 0.005, salvage = 0.0) {
   # Hard guard, not a comment: this mechanism's DSIC property comes entirely
-  # from its allocation rule being the exact welfare argmax, and that holds only
-  # while every task carries the identical-bundle. With per-task recipes the rule
-  # is a multidimensional-knapsack heuristic and the Clarke clamp papers over the
-  # externalities it creates, so no incentive claim is available on such an
-  # environment and none may be computed here by accident. A future DSIC
-  # statement on heterogeneous recipes has to run this over exact_pack_by_value.
-  if (!is.null(env$recipes)) {
+  # from its allocation rule being the exact welfare argmax. An identical
+  # bundle gives that, and so does a polymatroidal leaf-block region under unit
+  # leaf-token demand, which is what dsic_certificate computes. `dsic_status`
+  # is written only by a certifier and carries that verdict: "certified" is the
+  # argmax case, "uncertified" is the labelled converse arm, and its absence on
+  # a recipe-carrying environment is refused exactly as before.
+  certified   <- identical(env$dsic_status, "certified")
+  uncertified <- identical(env$dsic_status, "uncertified")
+  if (!is.null(env$recipes) && !certified && !uncertified) {
     stop("vcg_allocate: DSIC holds on an identical-bundle environment only; ",
          "with per-task recipes the allocation rule is a greedy heuristic, ",
-         "not the welfare argmax, so no incentive claim is available")
+         "not the welfare argmax, so no incentive claim is available. ",
+         "The only way past this is a dsic_certificate() verdict on the ",
+         "round's own effective region and tasks")
   }
 
   empty <- tibble(task_id = character(), agent_id = integer(),
                   realised_value = numeric(), vcg_payment = numeric())
+  attr(empty, "n_negative_externality") <- 0L
   if (nrow(tasks_all) == 0) return(empty)
 
   ev <- task_expected_value(
@@ -779,6 +823,7 @@ vcg_allocate <- function(tasks_all, env, util_hat, base_latency, success_model,
   W_total         <- sum(full$realised_value)
   agent_value_map <- tapply(full$realised_value, full$agent_id, sum)
   full$vcg_payment <- 0
+  n_negative <- 0L
 
   for (a in unique(full$agent_id)) {
     W_others_with_a    <- W_total - agent_value_map[[as.character(a)]]
@@ -786,15 +831,22 @@ vcg_allocate <- function(tasks_all, env, util_hat, base_latency, success_model,
     set_without_a      <- greedy_alloc_set(ev[keep], tasks_all[keep, ], env)
     W_others_without_a <- sum(set_without_a$realised_value)
     externality_a      <- W_others_without_a - W_others_with_a
-    # The clamp below is INERT under the exactness precondition guarded at the
-    # top of this function: where the allocation rule is the welfare argmax,
-    # removing an agent can only free capacity for the others, so no
-    # externality is negative and pmax(0, .) never binds. Enforced rather than
-    # asserted in prose, so an allocation rule that stops being the argmax
-    # surfaces here instead of being absorbed into a zero payment.
-    stopifnot(
-      "the allocation rule is not the welfare argmax: a Clarke externality is negative" =
-        all(externality_a >= -1e-12))
+    negative           <- any(externality_a < -1e-12)
+    # The clamp below is INERT wherever the allocation rule is the welfare
+    # argmax: removing an agent can only free capacity for the others, so no
+    # externality is negative and pmax(0, .) never binds. On that path the
+    # assertion is what surfaces a rule that has stopped being the argmax
+    # instead of absorbing it into a zero payment. On the labelled uncertified
+    # arm greedy is NOT the argmax, so a negative externality is the expected
+    # consequence rather than a defect: there the clamp stands and its action
+    # is counted, which makes how often the payment rule papered over a packing
+    # failure a reported number rather than a silence.
+    if (!uncertified) {
+      stopifnot(
+        "the allocation rule is not the welfare argmax: a Clarke externality is negative" =
+          !negative)
+    }
+    n_negative <- n_negative + as.integer(negative)
 
     am    <- full$agent_id == a
     tot_a <- sum(full$realised_value[am])
@@ -803,6 +855,7 @@ vcg_allocate <- function(tasks_all, env, util_hat, base_latency, success_model,
     }
   }
 
+  attr(full, "n_negative_externality") <- n_negative
   full
 }
 
@@ -835,12 +888,20 @@ posted_price_anchor <- function(env, k = 1) {
 #' @param tasks_all Tibble of tasks.
 #' @param env       Environment list.
 #' @param ev        Per-task expected value (from task_expected_value).
-#' @param p_post    The posted price per task bundle.
+#' @param p_post    The posted price: one scalar per task bundle, or one price
+#'                  per task when the operator posts a level per leaf.
 #' @return The admitted tasks, with a `payment` column.
 posted_price_allocate <- function(tasks_all, env, ev, p_post) {
-  keep <- is.finite(ev) & ev > p_post
-  pack_tasks_greedy(tasks_all[keep, ], ev[keep], env) %>%
-    mutate(payment = p_post)
+  # The screen is elementwise, but the packer rations the tasks that clear it,
+  # so it returns strictly fewer rows than the screen keeps. The payment is
+  # therefore indexed by the rows the PACKER chose, not by the screen: writing
+  # the screened price vector straight onto the packed tibble lands the prices
+  # on the wrong tasks. A scalar recycles through rep_len unchanged.
+  p_task <- rep_len(p_post, nrow(tasks_all))
+  keep   <- is.finite(ev) & ev > p_task
+  kept   <- tasks_all[keep, ]
+  pack_tasks_greedy(kept, ev[keep], env) %>%
+    mutate(payment = p_task[keep][match(task_id, kept$task_id)])
 }
 
 
