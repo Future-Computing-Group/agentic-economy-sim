@@ -602,17 +602,25 @@ node_domain_slices <- function(env, a = 25, eu = c("l1", "l2"),
 #' price vector the induced leaf prices, and every statistic on them, is read
 #' off.
 #'
+#' A leaf closed in a slice is priced by that slice at whatever its excess
+#' demand drives the price to against a capacity of zero, which is a number
+#' about the closure and not about the leaf. Averaging the two slices would
+#' carry that into the leaf's price, so a leaf takes the price of the slice
+#' that CARRIES it and the average is used only where both slices really
+#' compete, on the internal nodes they share.
+#'
 #' @param p_a    Price tibble of the first slice.
 #' @param p_b    Price tibble of the second.
 #' @param own_a  Leaves the first slice carries.
+#' @param leaves Every leaf of the instance.
 #' @return A price tibble in p_a's row order.
-node_combine_slice_prices <- function(p_a, p_b, own_a) {
-  b <- p_b$price[match(p_a$tier, p_b$tier)]
-  mine <- p_a$tier %in% own_a
-  theirs <- p_a$tier %in% setdiff(p_b$tier, own_a) & !mine
-  p_a$price <- ifelse(mine, p_a$price,
-                      ifelse(theirs & is.na(b), p_a$price,
-                             (p_a$price + b) / 2))
+node_combine_slice_prices <- function(p_a, p_b, own_a, leaves) {
+  b       <- p_b$price[match(p_a$tier, p_b$tier)]
+  is_leaf <- p_a$tier %in% leaves
+  mine    <- p_a$tier %in% own_a
+  p_a$price <- ifelse(is_leaf,
+                      ifelse(mine, p_a$price, b),
+                      (p_a$price + b) / 2)
   p_a
 }
 
@@ -940,7 +948,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       ms     <- append_price_history(c_eu$market_state, c_eu$market_state$prices)
       ms_ne  <- append_price_history(c_ne$market_state, c_ne$market_state$prices)
       prices <- node_combine_slice_prices(c_eu$clearing$prices,
-                                          c_ne$clearing$prices, eu_leaves)
+                                          c_ne$clearing$prices, eu_leaves,
+                                          leaves)
       unitCostV[t] <- mean(c(c_eu$clearing$unit_cost, c_ne$clearing$unit_cost))
       offered <- table(factor(as.character(tasks_all$recipe), levels = leaves))
       strandV[t] <- node_stranded_demand(offered[[coupled_pair[1]]],

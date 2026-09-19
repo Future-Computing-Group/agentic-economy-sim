@@ -204,6 +204,21 @@ test_that("slicing the coupling by domain restores the certificate on both slice
   expect_equal(unname(ne[c("l1", "l2", "l3", "l4")]), c(0, 0, 50, 100))
 })
 
+test_that("each leaf is priced by the slice that carries it", {
+  # A leaf a slice closed is priced there by its excess demand against a
+  # capacity of zero, which says something about the closure and nothing about
+  # the leaf. Averaging the slices would carry that into the leaf's price.
+  leaves <- c("l1", "l2", "l3", "l4")
+  p_eu <- tibble(tier = c("d", leaves), price = c(0.2, 0.3, 0.4, 900, 900))
+  p_ne <- tibble(tier = c("d", leaves), price = c(0.4, 900, 900, 0.5, 0.6))
+
+  got <- node_combine_slice_prices(p_eu, p_ne, c("l1", "l2"), leaves)
+  expect_equal(got$price[got$tier == "l1"], 0.3)
+  expect_equal(got$price[got$tier == "l4"], 0.6)
+  expect_equal(got$price[got$tier == "d"], 0.3)      # shared: the average
+  expect_true(all(got$price < 1))
+})
+
 test_that("the slice strands the demand the joint budget would have carried", {
   # The welfare cost of the recovery, computed from the round's own offered
   # counts: what one budget of 50 tokens would have carried across the pair,
