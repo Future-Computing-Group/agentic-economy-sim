@@ -138,3 +138,38 @@ test_that("the decomposition is written out with the rest of the statistics", {
   expect_match(block, "write_csv")
   expect_match(block, 'format = "file"', fixed = TRUE)
 })
+
+
+# ---- the cell variables are a pass-through, not three hardcoded lists -------
+
+.cellvar_fixture <- function() {
+  cv <- c(naive = 0.10, naive_ema = 0.06, hybrid_noema = 0.07, hybrid_ema = 0.02)
+  tidyr::expand_grid(graph_type = c("sp", "entangled"), load_level = "high",
+                     N = c(40L, 80L), architecture = names(cv), seed = 1:6) %>%
+    mutate(mean_price_volatility_tail =
+             unname(cv[architecture]) * (1 + 0.01 * seed) *
+             (1 + 0.1 * (N == 80L)))
+}
+
+test_that("the cell_vars default leaves the per-tier decomposition byte-identical", {
+  # The decomposition's cell variables were fixed in three independent places
+  # that agreed only by convention. They are one argument now, and its default
+  # is what the per-tier results have always been decomposed on.
+  raw <- .cellvar_fixture()
+  set.seed(5); expected <- stat_exp4_factorial(raw)$decomposition
+  set.seed(5); actual <- stat_exp4_factorial(
+    raw, cell_vars = c("graph_type", "load_level", "N"))$decomposition
+  expect_identical(actual, expected)
+  expect_equal(nrow(expected), 4L)
+})
+
+test_that("a decomposition with one population per topology drops N from the cells", {
+  # The node results run one matched population per arm, so a model carrying N
+  # as a factor would be rank deficient with a single level inside each cell.
+  raw <- .cellvar_fixture() %>% dplyr::filter(N == 40L)
+  out <- stat_exp4_factorial(raw, cell_vars = c("graph_type", "load_level"))
+  expect_equal(names(out$decomposition)[1:2], c("graph_type", "load_level"))
+  expect_false("N" %in% names(out$decomposition))
+  expect_equal(nrow(out$decomposition), 2L)
+  expect_true(all(is.finite(out$decomposition$delta_E_mean)))
+})

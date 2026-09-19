@@ -143,6 +143,55 @@ node_env <- function(graph_type, load_level, N, leaf_mix = "uniform",
   env
 }
 
+#' The interface and the smoothing an architecture level crosses.
+#'
+#' The four level names of the factorial are kept and only what they construct
+#' changes: on this substrate encapsulation IS the contraction of the
+#' integrator's cluster, and smoothing is the exponential moving average the
+#' posted price is put through. The two are separable by construction, because
+#' the pack runs at the raw clearing prices and the average is applied to what
+#' the agent is charged.
+#'
+#' @param architecture One of the four cells of the factorial.
+#' @return A list of `interface` and `beta`.
+node_architecture <- function(architecture = c("naive", "naive_ema",
+                                               "hybrid_noema", "hybrid_ema")) {
+  architecture <- match.arg(architecture)
+  list(interface = if (architecture %in% c("hybrid_noema", "hybrid_ema"))
+                     "inner" else "off",
+       beta      = if (architecture %in% c("naive_ema", "hybrid_ema")) 0.8 else 0)
+}
+
+#' The cluster an arm's integrator exports.
+#'
+#' @param graph_type One of "tree", "sp", "entangled".
+#' @return Character vector of nodes.
+node_cluster <- function(graph_type) {
+  if (graph_type == "sp") c("e1", "e2", "e3") else c("e1", "e2")
+}
+
+#' The environment one arm and interface level clears against.
+#'
+#' At `off` this is the instance itself. At an interface level it is the
+#' QUOTIENT: the market clears against the advertised region while delivery is
+#' evaluated against the true instance, which is the split the interface arms
+#' exist to measure.
+#'
+#' @param graph_type One of "tree", "sp", "entangled".
+#' @param load_level One of "low", "medium", "high".
+#' @param N          Agent population.
+#' @param leaf_mix   One of "uniform", "skewed".
+#' @param interface  "off", "inner" or "maxflow".
+#' @return An environment list.
+node_run_env <- function(graph_type, load_level, N, leaf_mix = "uniform",
+                         interface = "off") {
+  spec <- node_instance(graph_type)
+  if (interface != "off") {
+    spec <- contract_cluster(spec, node_cluster(graph_type), interface)
+  }
+  node_env(graph_type, load_level, N, leaf_mix, spec = spec)
+}
+
 #' The instance spec at the environment's EFFECTIVE capacities.
 #'
 #' Capacity lives twice in an environment and a governance cap writes both
@@ -556,6 +605,9 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
                             deadlines = c(500L, 750L, 1000L),
                             lambda_l_default = node_lambda_l(),
                             leaf_mix = c("uniform", "skewed"),
+                            architecture = c("naive", "naive_ema",
+                                             "hybrid_noema", "hybrid_ema"),
+                            interface = NULL,
                             policy = c("none", "trust", "locality", "role",
                                        "residency", "residency_sliced"),
                             cap_target = NA_character_,
@@ -566,40 +618,57 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   load_level <- match.arg(load_level)
   leaf_mix   <- match.arg(leaf_mix)
   policy     <- match.arg(policy)
+  architecture <- match.arg(architecture)
+
+  arch      <- node_architecture(architecture)
+  interface <- match.arg(interface %||% arch$interface,
+                         c("off", "inner", "maxflow"))
+  beta      <- arch$beta
 
   set.seed(seed)
-  env0   <- node_env(graph_type, load_level, N, leaf_mix)
-  agents <- init_agents(N)
-  providers <- leaf_providers(agents, rownames(env0$anc))
+  # Two environments, and the difference between them IS the interface: the
+  # market clears against the ADVERTISED region and delivery is evaluated
+  # against the TRUE instance. At interface "off" they are the same region.
+  env_true <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
+  env_adv  <- node_run_env(graph_type, load_level, N, leaf_mix, interface)
+  agents   <- init_agents(N)
+  providers <- leaf_providers(agents, rownames(env_true$anc))
 
   # The exactness-repair instrument: one leaf closed outright, which is what a
-  # coordinate cap can do to a crossing region.
-  if (!is.na(cap_target)) env0 <- apply_leaf_caps(env0, setNames(0, cap_target))
-  # The coupling is applied before the caps are read off the environment, so
-  # every rank, certificate and onset in this branch is computed on the
-  # EFFECTIVE region and not on the raw node capacities.
-  if (policy == "residency") env0 <- node_residency_coupling(env0)
+  # coordinate cap can do to a crossing region. A governance cap is a real
+  # restriction, so it binds on both sides of the interface.
+  caps_static <- if (!is.na(cap_target)) setNames(0, cap_target) else NULL
+  env_true <- apply_leaf_caps(env_true, caps_static)
+  env_adv  <- apply_leaf_caps(env_adv,  caps_static)
+  # The coupling is an admission constraint and not a service, so it goes on
+  # the advertised side alone. It is applied before any rank, certificate or
+  # onset is read, so all three are computed on the EFFECTIVE region.
+  if (policy == "residency") env_adv <- node_residency_coupling(env_adv)
   sliced <- policy == "residency_sliced"
-  slices <- if (sliced) node_domain_slices(env0) else NULL
+  slices <- if (sliced) node_domain_slices(env_adv) else NULL
   eu_leaves <- c("l1", "l2")
   coupled_pair <- c("l2", "l3")
 
-  anc    <- env0$anc
+  anc    <- env_adv$anc
   leaves <- rownames(anc)
   full   <- subset_name(leaves, leaves)
-  fr     <- flow_rank(node_effective_spec(env0), anc)
-  flow_full <- fr$value[[full]]
+  fr     <- flow_rank(node_effective_spec(env_true), env_true$anc)
+  flow_full <- fr$value[[subset_name(leaves, leaves)]]
+  w      <- env_true$spec$weight
+  cap_true <- setNames(tier_capacities(env_true)$capacity,
+                       tier_capacities(env_true)$tier)
 
   # The certificate and the region constants are cached per BRANCH wherever the
   # effective region is constant across rounds, which is every policy level but
   # the trust one: there a provider's reputation moves, the caps move with it,
   # and a cached verdict would describe a region the round is not clearing over.
   dynamic <- policy == "trust"
-  policy_env <- function(ag) {
-    if (sliced) return(env0)
-    apply_leaf_caps(env0, node_policy_caps(policy, env0, ag, providers))
+  policy_env <- function(e, ag) {
+    if (sliced) return(e)
+    apply_leaf_caps(e, node_policy_caps(policy, e, ag, providers))
   }
-  env  <- policy_env(agents)
+  env  <- policy_env(env_adv,  agents)
+  envT <- policy_env(env_true, agents)
   Ctok <- node_token_capacity(env)
   lb_full <- leaf_rank(anc, Ctok)[[full]]
 
@@ -612,11 +681,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   unitCostV <- clearV <- servedV <- numeric(n_rounds)
   priceCvV  <- tokensV <- bindV <- numeric(n_rounds)
   ratioV    <- shapeV <- strandV <- rep(NA_real_, n_rounds)
+  overV     <- numeric(n_rounds)
   certV     <- rep(NA, n_rounds)
 
   for (t in seq_len(n_rounds)) {
     if (dynamic) {
-      env  <- policy_env(agents)
+      env  <- policy_env(env_adv,  agents)
+      envT <- policy_env(env_true, agents)
       Ctok <- node_token_capacity(env)
       lb_full <- leaf_rank(anc, Ctok)[[full]]
     }
@@ -640,7 +711,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
       clear_multitier_market(
         tasks, e, b$util_hat, b$base_latency, state,
         alpha = alpha, p = p, lambda_l_default = lambda_l_default,
-        salvage = salvage, iters = iters, eta = eta)
+        salvage = salvage, iters = iters, eta = eta, beta = beta)
     }
 
     if (sliced) {
@@ -664,7 +735,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
       cleared <- clear_multitier_market(
         tasks_all, env, bid$util_hat, bid$base_latency, ms,
         alpha = alpha, p = p, lambda_l_default = lambda_l_default,
-        salvage = salvage, iters = iters, eta = eta)
+        salvage = salvage, iters = iters, eta = eta, beta = beta)
       allocation   <- cleared$allocation
       ms           <- append_price_history(cleared$market_state,
                                            cleared$market_state$prices)
@@ -673,9 +744,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
     }
     priceCvV[t] <- cross_leaf_price_cv(prices, anc)
 
-    # Executed against the physical instance: the slices are two admission
-    # regimes over one set of service nodes, and the queue is the nodes'.
-    results_t <- execute_allocation(allocation, env0)
+    # Executed against the TRUE instance: an advertised scalar the internal
+    # routing cannot honour admits a mix the physical nodes still have to
+    # queue, which is where an over-committing interface pays for itself.
+    results_t <- execute_allocation(allocation, envT)
     if (nrow(results_t) > 0 &&
         !all(c("deadline", "value_base") %in% names(results_t))) {
       results_t <- results_t %>%
@@ -697,10 +769,17 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
       p95L[t] <- quantile(results_t$latency, 0.95, na.rm = TRUE, names = FALSE)
     }
 
-    util_df   <- compute_utilisation_per_node(env0, allocation)
-    utilV[t]  <- mean(util_df$util, na.rm = TRUE)
-    bindV[t]  <- as.numeric(max(util_df$util, na.rm = TRUE) >= 0.99)
-    prev_util <- util_df
+    # The bid-time signal is read off the ADVERTISED region, which is what the
+    # agents can observe; the realised load is the true instance's and is what
+    # the over-commitment is measured on.
+    prev_util <- compute_utilisation_per_node(env, allocation)
+    true_util <- compute_utilisation_per_node(envT, allocation)
+    utilV[t]  <- mean(true_util$util, na.rm = TRUE)
+    bindV[t]  <- as.numeric(max(true_util$util, na.rm = TRUE) >= 0.99)
+    overV[t]  <- if (nrow(allocation) == 0L) 0 else {
+      used <- colSums(task_recipes(allocation, envT))
+      max(0, max((used[names(cap_true)] - cap_true) / w, na.rm = TRUE))
+    }
 
     succ <- if (nrow(results_t) == 0) 0 else sum(results_t$success, na.rm = TRUE)
     if (n_gen == 0) {
@@ -714,7 +793,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
     tokensV[t] <- nrow(allocation)
 
     welfareV[t] <- compute_welfare(
-      results_t, env0, ms$prices,
+      results_t, envT, ms$prices,
       lambda_l_default = lambda_l_default, salvage = salvage,
       cong_cost = TRUE, cong_gamma = 0.05)
     orc <- oracle_pack_realised(
@@ -764,6 +843,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
     N                          = as.integer(N),
     seed                       = seed,
     leaf_mix                   = leaf_mix,
+    architecture               = architecture,
+    interface                  = interface,
     policy                     = policy,
     cap_target                 = cap_target,
     median_latency             = mean(medL, na.rm = TRUE),
@@ -792,6 +873,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
     price_cv_cross             = mean(priceCvV, na.rm = TRUE),
     tokens_admitted            = mean(tokensV, na.rm = TRUE),
     binding_fraction           = mean(bindV, na.rm = TRUE),
+    # Tokens by which the admitted mix exceeds a true node's capacity, at the
+    # worst node of the round. Zero wherever the advertised region is inside
+    # the true one, positive wherever an aggregate reading was optimistic.
+    overcommitment             = mean(overV, na.rm = TRUE),
     # The verdict on the region this cell actually cleared over, computed
     # rather than inherited from the arm's name.
     certificate_ok             = all(certV[!is.na(certV)]),

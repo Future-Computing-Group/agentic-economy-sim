@@ -552,6 +552,7 @@ stat_exp4 <- function(raw_df) {
 #' @return A list: decomposition, the two main effects, and the ART interaction.
 stat_exp4_factorial <- function(raw_df,
                                 metric = "mean_price_volatility_tail",
+                                cell_vars = c("graph_type", "load_level", "N"),
                                 metrics = c("median_latency", "drop_rate",
                                             "welfare", "mean_price_volatility",
                                             "mean_price_volatility_tail",
@@ -571,14 +572,14 @@ stat_exp4_factorial <- function(raw_df,
       cells, metric,
       f1 = "encapsulation", f1_levels = c("off", "on"),
       f2 = "ema",           f2_levels = c("off", "on"),
-      cell_vars = c("graph_type", "load_level", "N")
+      cell_vars = cell_vars
     ) %>%
     # Sign: the contrasts are gains, the paper reads reductions in dispersion,
     # so each is negated once, here, rather than at every reporting site.
-    transmute(graph_type, load_level, N,
+    transmute(across(all_of(cell_vars)),
               delta_E     = -marginal_f1, delta_S = -marginal_f2,
               delta_joint = -joint_gain,  interaction = -synergy) %>%
-    group_by(graph_type, load_level, N) %>%
+    group_by(across(all_of(cell_vars))) %>%
     summarise(
       # The sample size travels with the estimate, and with each estimate: a
       # seed that drops out of one contrast need not drop out of the others.
@@ -594,17 +595,18 @@ stat_exp4_factorial <- function(raw_df,
     decomposition = decomposition,
     encapsulation = stat_summary_single_factor(cells, "encapsulation", metrics),
     ema           = stat_summary_single_factor(cells, "ema", metrics),
-    # N is a factor of the model rather than a dimension pooled into its
-    # residual: four agent counts left in the error term make the test
-    # conservative about the interaction it exists to report.
+    # Every cell variable is a factor of the model rather than a dimension
+    # pooled into its residual: an agent count left in the error term makes the
+    # test conservative about the interaction it exists to report. The cell
+    # variables are the argument's, so a design with one population per
+    # topology does not carry a rank-deficient term for it.
     interaction   = art_anova(
       cells %>% mutate(encapsulation = factor(encapsulation),
                        ema = factor(ema),
-                       graph_type = factor(graph_type),
-                       load_level = factor(load_level),
-                       N = factor(N)),
-      stats::reformulate(c("encapsulation * ema * graph_type * load_level * N"),
-                         response = metric)
+                       across(all_of(cell_vars), factor)),
+      stats::reformulate(
+        paste(c("encapsulation", "ema", cell_vars), collapse = " * "),
+        response = metric)
     )
   )
 }

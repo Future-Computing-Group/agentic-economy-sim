@@ -642,6 +642,71 @@ matched_controls <- function(spec) {
   )
 }
 
+#' Contract a sub-DAG into one node advertising a single scalar.
+#'
+#' What an integrator exports is a quotient: the cluster's internal nodes are
+#' replaced by one node, its arcs are relabelled onto that node, and what the
+#' cluster can carry is advertised as ONE number. Two ways to choose that
+#' number, and they differ in whether the advertised region is inside the true
+#' one or over it:
+#'
+#'   "inner"   the largest scalar every mix of which the cluster can deliver.
+#'             A leaf reachable through one cluster member alone is what bounds
+#'             it, so the scalar is the smallest total the members reaching any
+#'             one leaf can carry. Conservative, and exact.
+#'   "maxflow" the cluster's own node-split max flow to its leaves, which is
+#'             what an aggregate capacity reading reports. It is deliverable in
+#'             the best mix and not in the worst, so it over-commits wherever
+#'             the exported units are not interchangeable.
+#'
+#' The contracted node inherits the cluster's physical tier, so the quotient's
+#' zero-queue critical path is the instance's and an interface arm is not a
+#' latency treatment in disguise.
+#'
+#' @param spec      An instance spec.
+#' @param cluster   Character vector of nodes to contract.
+#' @param advertise "inner" or "maxflow".
+#' @param name      Label for the contracted node.
+#' @return An instance spec whose leaf-block family is laminar.
+contract_cluster <- function(spec, cluster, advertise = c("inner", "maxflow"),
+                             name = "J") {
+  advertise <- match.arg(advertise)
+  anc  <- ancestor_matrix(spec)
+  Ctok <- token_capacity(spec)
+  L_J  <- rownames(anc)[rowSums(anc[, cluster, drop = FALSE]) > 0]
+
+  scalar <- switch(advertise,
+    inner = min(vapply(L_J, function(l)
+      sum(Ctok[cluster[anc[l, cluster] > 0]]), numeric(1))),
+    maxflow = {
+      sub <- list(
+        nodes  = spec$nodes[spec$nodes$node %in% c(cluster, L_J), ],
+        edges  = spec$edges[spec$edges$from %in% cluster &
+                              spec$edges$to %in% L_J, ],
+        weight = spec$weight)
+      sa <- ancestor_matrix(sub)
+      flow_rank(sub, sa)$value[[subset_name(rownames(sa), rownames(sa))]]
+    })
+
+  keep  <- !(spec$nodes$node %in% cluster)
+  nodes <- dplyr::bind_rows(
+    spec$nodes[keep, ],
+    tibble(node = name,
+           phys = unique(spec$nodes$phys[spec$nodes$node %in% cluster]),
+           capacity = scalar * spec$weight))
+  stopifnot("a cluster spans one physical tier" = nrow(nodes) == sum(keep) + 1L)
+
+  e <- spec$edges
+  e$from[e$from %in% cluster] <- name
+  e$to[e$to %in% cluster]     <- name
+  e <- dplyr::distinct(e[e$from != e$to, ])
+
+  out <- list(nodes = nodes, edges = e, weight = spec$weight)
+  stopifnot("the quotient's leaf-block family is not laminar" =
+              leaf_blocks_laminar(ancestor_matrix(out)))
+  out
+}
+
 #' The instance's capacities in init_environment's shape, labelled by node.
 #'
 #' @param spec An instance spec.
