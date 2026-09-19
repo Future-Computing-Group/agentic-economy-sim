@@ -2,17 +2,17 @@
   "model": "mistral:7b-instruct-q4_K_M",
   "host": "http://localhost:11434",
   "pattern": "a",
-  "n_tasks": 5,
+  "n_tasks": 20,
   "runs": [
     {
       "plan": {
-        "latency_ms": 666.9421195983887,
+        "latency_ms": 2697.641134262085,
         "tokens": 76,
         "tier": "device",
         "parents": []
       },
       "tool0": {
-        "latency_ms": 275.1591205596924,
+        "latency_ms": 272.49908447265625,
         "tokens": 34,
         "tier": "edge",
         "parents": [
@@ -20,7 +20,172 @@
         ]
       },
       "tool1": {
-        "latency_ms": 617.591142654419,
+        "latency_ms": 614.4909858703613,
+        "tokens": 53,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 787.4557971954346,
+        "tokens": 101,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 649.6319770812988,
+        "tokens": 75,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 761.5129947662354,
+        "tokens": 57,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 2385.8113288879395,
+        "tokens": 143,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 2309.9188804626465,
+        "tokens": 278,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 630.0568580627441,
+        "tokens": 80,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 614.2868995666504,
+        "tokens": 49,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 1097.0301628112793,
+        "tokens": 79,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 3578.110933303833,
+        "tokens": 282,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 750.4100799560547,
+        "tokens": 84,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 672.7931499481201,
+        "tokens": 58,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 1426.4461994171143,
+        "tokens": 95,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 914.8552417755127,
+        "tokens": 163,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 490.09203910827637,
+        "tokens": 66,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 1194.8800086975098,
+        "tokens": 77,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 3434.087038040161,
+        "tokens": 190,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 1961.0919952392578,
+        "tokens": 328,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 629.3830871582031,
+        "tokens": 76,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 273.3340263366699,
+        "tokens": 34,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 595.5877304077148,
         "tokens": 52,
         "tier": "edge",
         "parents": [
@@ -28,8 +193,8 @@
         ]
       },
       "aggregate": {
-        "latency_ms": 799.3659973144531,
-        "tokens": 99,
+        "latency_ms": 652.1921157836914,
+        "tokens": 93,
         "tier": "cloud",
         "parents": [
           "tool0",
@@ -39,30 +204,30 @@
     },
     {
       "plan": {
-        "latency_ms": 1457.0980072021484,
-        "tokens": 89,
+        "latency_ms": 1026.1201858520508,
+        "tokens": 94,
         "tier": "device",
         "parents": []
       },
       "tool0": {
-        "latency_ms": 3335.407018661499,
-        "tokens": 115,
+        "latency_ms": 1080.996036529541,
+        "tokens": 84,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "tool1": {
-        "latency_ms": 852.5962829589844,
-        "tokens": 60,
+        "latency_ms": 2488.6507987976074,
+        "tokens": 157,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "aggregate": {
-        "latency_ms": 2249.4049072265625,
-        "tokens": 230,
+        "latency_ms": 2145.756959915161,
+        "tokens": 289,
         "tier": "cloud",
         "parents": [
           "tool0",
@@ -72,13 +237,13 @@
     },
     {
       "plan": {
-        "latency_ms": 774.6360301971436,
-        "tokens": 77,
+        "latency_ms": 613.7070655822754,
+        "tokens": 79,
         "tier": "device",
         "parents": []
       },
       "tool0": {
-        "latency_ms": 713.2899761199951,
+        "latency_ms": 536.095142364502,
         "tokens": 45,
         "tier": "edge",
         "parents": [
@@ -86,16 +251,16 @@
         ]
       },
       "tool1": {
-        "latency_ms": 1065.1929378509521,
-        "tokens": 61,
+        "latency_ms": 1448.03786277771,
+        "tokens": 94,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "aggregate": {
-        "latency_ms": 2192.314863204956,
-        "tokens": 172,
+        "latency_ms": 1355.42893409729,
+        "tokens": 185,
         "tier": "cloud",
         "parents": [
           "tool0",
@@ -105,30 +270,195 @@
     },
     {
       "plan": {
-        "latency_ms": 1162.5878810882568,
+        "latency_ms": 954.660177230835,
+        "tokens": 94,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 252.13193893432617,
+        "tokens": 42,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 570.3938007354736,
+        "tokens": 58,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 884.5551013946533,
+        "tokens": 105,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 651.5860557556152,
+        "tokens": 74,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 912.4050140380859,
+        "tokens": 66,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 3115.239143371582,
+        "tokens": 179,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 1188.1470680236816,
+        "tokens": 263,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 588.2711410522461,
+        "tokens": 74,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 270.0018882751465,
+        "tokens": 34,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 554.3859004974365,
+        "tokens": 48,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 735.5866432189941,
+        "tokens": 98,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 588.3147716522217,
+        "tokens": 72,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 1495.1848983764648,
+        "tokens": 94,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 2983.532190322876,
+        "tokens": 170,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 2831.0351371765137,
+        "tokens": 364,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 1739.2029762268066,
+        "tokens": 135,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 772.5999355316162,
+        "tokens": 62,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 750.2522468566895,
+        "tokens": 72,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 1351.1719703674316,
+        "tokens": 160,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 832.7341079711914,
         "tokens": 88,
         "tier": "device",
         "parents": []
       },
       "tool0": {
-        "latency_ms": 343.2900905609131,
-        "tokens": 39,
+        "latency_ms": 732.5870990753174,
+        "tokens": 63,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "tool1": {
-        "latency_ms": 1010.0350379943848,
-        "tokens": 64,
+        "latency_ms": 611.1321449279785,
+        "tokens": 57,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "aggregate": {
-        "latency_ms": 1256.3130855560303,
-        "tokens": 117,
+        "latency_ms": 792.464017868042,
+        "tokens": 126,
         "tier": "cloud",
         "parents": [
           "tool0",
@@ -138,30 +468,195 @@
     },
     {
       "plan": {
-        "latency_ms": 886.3029479980469,
-        "tokens": 75,
+        "latency_ms": 810.8792304992676,
+        "tokens": 82,
         "tier": "device",
         "parents": []
       },
       "tool0": {
-        "latency_ms": 1887.887954711914,
-        "tokens": 90,
+        "latency_ms": 1498.2037544250488,
+        "tokens": 98,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "tool1": {
-        "latency_ms": 5012.277841567993,
-        "tokens": 204,
+        "latency_ms": 1133.040189743042,
+        "tokens": 85,
         "tier": "edge",
         "parents": [
           "plan"
         ]
       },
       "aggregate": {
-        "latency_ms": 2062.4687671661377,
-        "tokens": 314,
+        "latency_ms": 1362.2150421142578,
+        "tokens": 208,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 633.8090896606445,
+        "tokens": 76,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 271.01898193359375,
+        "tokens": 34,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 612.9670143127441,
+        "tokens": 53,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 786.3199710845947,
+        "tokens": 101,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 829.3368816375732,
+        "tokens": 84,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 676.8980026245117,
+        "tokens": 57,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 2395.965814590454,
+        "tokens": 149,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 1942.4958229064941,
+        "tokens": 257,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 849.3571281433105,
+        "tokens": 91,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 592.4148559570312,
+        "tokens": 54,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 1219.2459106445312,
+        "tokens": 88,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 3566.549062728882,
+        "tokens": 287,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 953.1328678131104,
+        "tokens": 94,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 678.3003807067871,
+        "tokens": 63,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 574.7859477996826,
+        "tokens": 58,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 939.7571086883545,
+        "tokens": 128,
+        "tier": "cloud",
+        "parents": [
+          "tool0",
+          "tool1"
+        ]
+      }
+    },
+    {
+      "plan": {
+        "latency_ms": 632.2958469390869,
+        "tokens": 73,
+        "tier": "device",
+        "parents": []
+      },
+      "tool0": {
+        "latency_ms": 838.9339447021484,
+        "tokens": 59,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "tool1": {
+        "latency_ms": 352.39696502685547,
+        "tokens": 43,
+        "tier": "edge",
+        "parents": [
+          "plan"
+        ]
+      },
+      "aggregate": {
+        "latency_ms": 1507.4820518493652,
+        "tokens": 150,
         "tier": "cloud",
         "parents": [
           "tool0",
@@ -175,8 +670,8 @@
       "stage": "plan",
       "parents": [],
       "tier": "device",
-      "t_start": 1789846995.68923,
-      "latency_ms": 666.9421195983887,
+      "t_start": 1789847582.7839549,
+      "latency_ms": 2697.641134262085,
       "tokens": 76,
       "model": "mistral:7b-instruct-q4_K_M"
     },
@@ -186,8 +681,8 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789846996.356253,
-      "latency_ms": 275.1591205596924,
+      "t_start": 1789847585.481674,
+      "latency_ms": 272.49908447265625,
       "tokens": 34,
       "model": "mistral:7b-instruct-q4_K_M"
     },
@@ -197,8 +692,223 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789846996.6314619,
-      "latency_ms": 617.591142654419,
+      "t_start": 1789847585.754223,
+      "latency_ms": 614.4909858703613,
+      "tokens": 53,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847586.3687592,
+      "latency_ms": 787.4557971954346,
+      "tokens": 101,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847587.156283,
+      "latency_ms": 649.6319770812988,
+      "tokens": 75,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847587.80596,
+      "latency_ms": 761.5129947662354,
+      "tokens": 57,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847588.5675159,
+      "latency_ms": 2385.8113288879395,
+      "tokens": 143,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847590.9533792,
+      "latency_ms": 2309.9188804626465,
+      "tokens": 278,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847593.263349,
+      "latency_ms": 630.0568580627441,
+      "tokens": 80,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847593.893452,
+      "latency_ms": 614.2868995666504,
+      "tokens": 49,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847594.507782,
+      "latency_ms": 1097.0301628112793,
+      "tokens": 79,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847595.604886,
+      "latency_ms": 3578.110933303833,
+      "tokens": 282,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847599.183039,
+      "latency_ms": 750.4100799560547,
+      "tokens": 84,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847599.933493,
+      "latency_ms": 672.7931499481201,
+      "tokens": 58,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847600.606325,
+      "latency_ms": 1426.4461994171143,
+      "tokens": 95,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847602.0328279,
+      "latency_ms": 914.8552417755127,
+      "tokens": 163,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847602.947725,
+      "latency_ms": 490.09203910827637,
+      "tokens": 66,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847603.4378629,
+      "latency_ms": 1194.8800086975098,
+      "tokens": 77,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847604.632789,
+      "latency_ms": 3434.087038040161,
+      "tokens": 190,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847608.066931,
+      "latency_ms": 1961.0919952392578,
+      "tokens": 328,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847610.028065,
+      "latency_ms": 629.3830871582031,
+      "tokens": 76,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847610.6574888,
+      "latency_ms": 273.3340263366699,
+      "tokens": 34,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847610.9308631,
+      "latency_ms": 595.5877304077148,
       "tokens": 52,
       "model": "mistral:7b-instruct-q4_K_M"
     },
@@ -209,18 +919,18 @@
         "tool1"
       ],
       "tier": "cloud",
-      "t_start": 1789846997.249115,
-      "latency_ms": 799.3659973144531,
-      "tokens": 99,
+      "t_start": 1789847611.5264928,
+      "latency_ms": 652.1921157836914,
+      "tokens": 93,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
       "stage": "plan",
       "parents": [],
       "tier": "device",
-      "t_start": 1789846998.0485818,
-      "latency_ms": 1457.0980072021484,
-      "tokens": 89,
+      "t_start": 1789847612.178726,
+      "latency_ms": 1026.1201858520508,
+      "tokens": 94,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -229,9 +939,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789846999.505791,
-      "latency_ms": 3335.407018661499,
-      "tokens": 115,
+      "t_start": 1789847613.204886,
+      "latency_ms": 1080.996036529541,
+      "tokens": 84,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -240,9 +950,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847002.8412428,
-      "latency_ms": 852.5962829589844,
-      "tokens": 60,
+      "t_start": 1789847614.2859242,
+      "latency_ms": 2488.6507987976074,
+      "tokens": 157,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -252,18 +962,18 @@
         "tool1"
       ],
       "tier": "cloud",
-      "t_start": 1789847003.693902,
-      "latency_ms": 2249.4049072265625,
-      "tokens": 230,
+      "t_start": 1789847616.774626,
+      "latency_ms": 2145.756959915161,
+      "tokens": 289,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
       "stage": "plan",
       "parents": [],
       "tier": "device",
-      "t_start": 1789847005.943359,
-      "latency_ms": 774.6360301971436,
-      "tokens": 77,
+      "t_start": 1789847618.920428,
+      "latency_ms": 613.7070655822754,
+      "tokens": 79,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -272,8 +982,8 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847006.718038,
-      "latency_ms": 713.2899761199951,
+      "t_start": 1789847619.534179,
+      "latency_ms": 536.095142364502,
       "tokens": 45,
       "model": "mistral:7b-instruct-q4_K_M"
     },
@@ -283,9 +993,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847007.431371,
-      "latency_ms": 1065.1929378509521,
-      "tokens": 61,
+      "t_start": 1789847620.070316,
+      "latency_ms": 1448.03786277771,
+      "tokens": 94,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -295,17 +1005,232 @@
         "tool1"
       ],
       "tier": "cloud",
-      "t_start": 1789847008.4966102,
-      "latency_ms": 2192.314863204956,
-      "tokens": 172,
+      "t_start": 1789847621.518393,
+      "latency_ms": 1355.42893409729,
+      "tokens": 185,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
       "stage": "plan",
       "parents": [],
       "tier": "device",
-      "t_start": 1789847010.688965,
-      "latency_ms": 1162.5878810882568,
+      "t_start": 1789847622.8738618,
+      "latency_ms": 954.660177230835,
+      "tokens": 94,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847623.828567,
+      "latency_ms": 252.13193893432617,
+      "tokens": 42,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847624.080739,
+      "latency_ms": 570.3938007354736,
+      "tokens": 58,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847624.651171,
+      "latency_ms": 884.5551013946533,
+      "tokens": 105,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847625.535765,
+      "latency_ms": 651.5860557556152,
+      "tokens": 74,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847626.1873999,
+      "latency_ms": 912.4050140380859,
+      "tokens": 66,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847627.099844,
+      "latency_ms": 3115.239143371582,
+      "tokens": 179,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847630.215124,
+      "latency_ms": 1188.1470680236816,
+      "tokens": 263,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847631.4033148,
+      "latency_ms": 588.2711410522461,
+      "tokens": 74,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847631.9916291,
+      "latency_ms": 270.0018882751465,
+      "tokens": 34,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847632.261674,
+      "latency_ms": 554.3859004974365,
+      "tokens": 48,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847632.8160992,
+      "latency_ms": 735.5866432189941,
+      "tokens": 98,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847633.551726,
+      "latency_ms": 588.3147716522217,
+      "tokens": 72,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847634.140089,
+      "latency_ms": 1495.1848983764648,
+      "tokens": 94,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847635.6353128,
+      "latency_ms": 2983.532190322876,
+      "tokens": 170,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847638.618897,
+      "latency_ms": 2831.0351371765137,
+      "tokens": 364,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847641.449973,
+      "latency_ms": 1739.2029762268066,
+      "tokens": 135,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847643.189217,
+      "latency_ms": 772.5999355316162,
+      "tokens": 62,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847643.961856,
+      "latency_ms": 750.2522468566895,
+      "tokens": 72,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847644.71215,
+      "latency_ms": 1351.1719703674316,
+      "tokens": 160,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847646.0633678,
+      "latency_ms": 832.7341079711914,
       "tokens": 88,
       "model": "mistral:7b-instruct-q4_K_M"
     },
@@ -315,9 +1240,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847011.851605,
-      "latency_ms": 343.2900905609131,
-      "tokens": 39,
+      "t_start": 1789847646.896148,
+      "latency_ms": 732.5870990753174,
+      "tokens": 63,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -326,9 +1251,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847012.194936,
-      "latency_ms": 1010.0350379943848,
-      "tokens": 64,
+      "t_start": 1789847647.6287758,
+      "latency_ms": 611.1321449279785,
+      "tokens": 57,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -338,18 +1263,18 @@
         "tool1"
       ],
       "tier": "cloud",
-      "t_start": 1789847013.205009,
-      "latency_ms": 1256.3130855560303,
-      "tokens": 117,
+      "t_start": 1789847648.239949,
+      "latency_ms": 792.464017868042,
+      "tokens": 126,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
       "stage": "plan",
       "parents": [],
       "tier": "device",
-      "t_start": 1789847014.461368,
-      "latency_ms": 886.3029479980469,
-      "tokens": 75,
+      "t_start": 1789847649.0324538,
+      "latency_ms": 810.8792304992676,
+      "tokens": 82,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -358,9 +1283,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847015.347717,
-      "latency_ms": 1887.887954711914,
-      "tokens": 90,
+      "t_start": 1789847649.8433821,
+      "latency_ms": 1498.2037544250488,
+      "tokens": 98,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -369,9 +1294,9 @@
         "plan"
       ],
       "tier": "edge",
-      "t_start": 1789847017.235646,
-      "latency_ms": 5012.277841567993,
-      "tokens": 204,
+      "t_start": 1789847651.34163,
+      "latency_ms": 1133.040189743042,
+      "tokens": 85,
       "model": "mistral:7b-instruct-q4_K_M"
     },
     {
@@ -381,14 +1306,229 @@
         "tool1"
       ],
       "tier": "cloud",
-      "t_start": 1789847022.247981,
-      "latency_ms": 2062.4687671661377,
-      "tokens": 314,
+      "t_start": 1789847652.474711,
+      "latency_ms": 1362.2150421142578,
+      "tokens": 208,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847653.836967,
+      "latency_ms": 633.8090896606445,
+      "tokens": 76,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847654.470819,
+      "latency_ms": 271.01898193359375,
+      "tokens": 34,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847654.741878,
+      "latency_ms": 612.9670143127441,
+      "tokens": 53,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847655.354883,
+      "latency_ms": 786.3199710845947,
+      "tokens": 101,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847656.141243,
+      "latency_ms": 829.3368816375732,
+      "tokens": 84,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847656.970624,
+      "latency_ms": 676.8980026245117,
+      "tokens": 57,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847657.647561,
+      "latency_ms": 2395.965814590454,
+      "tokens": 149,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847660.043581,
+      "latency_ms": 1942.4958229064941,
+      "tokens": 257,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847661.9861178,
+      "latency_ms": 849.3571281433105,
+      "tokens": 91,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847662.835517,
+      "latency_ms": 592.4148559570312,
+      "tokens": 54,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847663.427973,
+      "latency_ms": 1219.2459106445312,
+      "tokens": 88,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847664.647258,
+      "latency_ms": 3566.549062728882,
+      "tokens": 287,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847668.213849,
+      "latency_ms": 953.1328678131104,
+      "tokens": 94,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847669.1670258,
+      "latency_ms": 678.3003807067871,
+      "tokens": 63,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847669.845372,
+      "latency_ms": 574.7859477996826,
+      "tokens": 58,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847670.4201999,
+      "latency_ms": 939.7571086883545,
+      "tokens": 128,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "plan",
+      "parents": [],
+      "tier": "device",
+      "t_start": 1789847671.359998,
+      "latency_ms": 632.2958469390869,
+      "tokens": 73,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool0",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847671.992338,
+      "latency_ms": 838.9339447021484,
+      "tokens": 59,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "tool1",
+      "parents": [
+        "plan"
+      ],
+      "tier": "edge",
+      "t_start": 1789847672.831309,
+      "latency_ms": 352.39696502685547,
+      "tokens": 43,
+      "model": "mistral:7b-instruct-q4_K_M"
+    },
+    {
+      "stage": "aggregate",
+      "parents": [
+        "tool0",
+        "tool1"
+      ],
+      "tier": "cloud",
+      "t_start": 1789847673.183745,
+      "latency_ms": 1507.4820518493652,
+      "tokens": 150,
       "model": "mistral:7b-instruct-q4_K_M"
     }
   ],
   "structure": "plan -> 2 parallel tool calls -> aggregate",
-  "response_digest": "5810073426eb4e4f59f459e0fefe1bc579a3de67341799bd3c2be0b6888f0fe9",
+  "response_digest": "dac86e033bdb5514d444b935a1d9ab39bb29af8dee86a00e53fea01d1b28f5e7",
   "graph": {
     "nodes": [
       {
@@ -432,59 +1572,59 @@
   },
   "tiers": {
     "device": {
-      "mean_tokens": 81,
-      "mean_tokens_per_task": 81,
-      "mean_latency_ms": 989.5133972167969,
-      "n_stage_calls": 5,
+      "mean_tokens": 83.35,
+      "mean_tokens_per_task": 83.35,
+      "mean_latency_ms": 877.5311350822449,
+      "n_stage_calls": 20,
       "demand_weight": 1.0
     },
     "edge": {
-      "mean_tokens": 76.4,
-      "mean_tokens_per_task": 152.8,
-      "mean_latency_ms": 1511.2727403640747,
-      "n_stage_calls": 10,
-      "demand_weight": 1.89
+      "mean_tokens": 77.175,
+      "mean_tokens_per_task": 154.35,
+      "mean_latency_ms": 1069.01393532753,
+      "n_stage_calls": 40,
+      "demand_weight": 1.85
     },
     "cloud": {
-      "mean_tokens": 186.4,
-      "mean_tokens_per_task": 186.4,
-      "mean_latency_ms": 1711.973524093628,
-      "n_stage_calls": 5,
-      "demand_weight": 2.3
+      "mean_tokens": 198.3,
+      "mean_tokens_per_task": 198.3,
+      "mean_latency_ms": 1579.6294927597046,
+      "n_stage_calls": 20,
+      "demand_weight": 2.38
     }
   },
   "aggregate_stages": {
     "plan": {
       "tier": "device",
-      "mean_tokens": 81,
-      "mean_tokens_per_task": 81,
-      "mean_latency_ms": 989.5133972167969,
-      "n_stage_calls": 5,
-      "demand_weight": 1.25
+      "mean_tokens": 83.35,
+      "mean_tokens_per_task": 83.35,
+      "mean_latency_ms": 877.5311350822449,
+      "n_stage_calls": 20,
+      "demand_weight": 1.43
     },
     "tool0": {
       "tier": "edge",
-      "mean_tokens": 64.6,
-      "mean_tokens_per_task": 64.6,
-      "mean_latency_ms": 1311.0068321228027,
-      "n_stage_calls": 5,
+      "mean_tokens": 58.2,
+      "mean_tokens_per_task": 58.2,
+      "mean_latency_ms": 719.8539018630981,
+      "n_stage_calls": 20,
       "demand_weight": 1.0
     },
     "tool1": {
       "tier": "edge",
-      "mean_tokens": 88.2,
-      "mean_tokens_per_task": 88.2,
-      "mean_latency_ms": 1711.5386486053467,
-      "n_stage_calls": 5,
-      "demand_weight": 1.37
+      "mean_tokens": 96.15,
+      "mean_tokens_per_task": 96.15,
+      "mean_latency_ms": 1418.1739687919617,
+      "n_stage_calls": 20,
+      "demand_weight": 1.65
     },
     "aggregate": {
       "tier": "cloud",
-      "mean_tokens": 186.4,
-      "mean_tokens_per_task": 186.4,
-      "mean_latency_ms": 1711.973524093628,
-      "n_stage_calls": 5,
-      "demand_weight": 2.89
+      "mean_tokens": 198.3,
+      "mean_tokens_per_task": 198.3,
+      "mean_latency_ms": 1579.6294927597046,
+      "n_stage_calls": 20,
+      "demand_weight": 3.41
     }
   }
 }

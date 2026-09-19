@@ -293,9 +293,12 @@ def main():
         run_one, declared = PATTERNS[a.pattern]
         endpoint = endpoint_of(a.host)
         runs = []
-        for q in TASKS[:a.n]:
+        # The question list is the emulation's list too and is fixed, so a
+        # larger n repeats the workload rather than extending it: the extra
+        # tasks measure the model's dispersion on the same questions.
+        for i in range(a.n):
             try:
-                runs.append(run_one(a.model, q, endpoint))
+                runs.append(run_one(a.model, TASKS[i % len(TASKS)], endpoint))
             except Exception as e:
                 print("warn: task failed: %s" % e, file=sys.stderr)
         runs, dropped = keep_runs(runs, declared)

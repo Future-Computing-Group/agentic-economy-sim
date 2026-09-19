@@ -122,6 +122,17 @@ class TestRecordedGraph(HarnessCase):
         self.assertEqual(calls[0]["parents"], [])
         self.assertEqual(calls[0]["model"], "stub")
 
+    def test_more_tasks_than_questions_repeats_the_question_list(self):
+        """The question list is the emulation's list too, so it is fixed.
+
+        A larger n therefore draws repeated tasks from the same workload and
+        measures the model's own dispersion on it, rather than silently
+        recording fewer tasks than were asked for.
+        """
+        profile = self.run_harness("a", n=7)
+        self.assertEqual(profile["n_tasks"], 7)
+        self.assertEqual(len(profile["calls"]), 28)
+
     def test_the_profile_names_the_host_and_the_pattern(self):
         profile = self.run_harness("b", n=1)
         self.assertEqual(profile["pattern"], "b")
