@@ -287,14 +287,23 @@ agentic_lambda_l <- function(lambda_l_nominal = 0.005,
 #' Creates a three-tier (device/edge/cloud) environment with per-tier
 #' capacities, base latencies, and topology-aware demand weights.
 #'
+#' The two resource tibbles are arguments rather than literals so that a graph
+#' whose resources are its own service NODES can carry a capacity and a base
+#' delay per node. Both default to the three-tier tibbles, so a caller that
+#' does not pass them gets the environment it always got.
+#'
 #' @param graph       DAG object from build_dependency_graph().
 #' @param load_level  One of "low", "medium", "high" (maps to lambda = 0.5/1.0/1.5).
 #' @param n_agents    Number of agents in the population.
 #' @param graph_type  String identifying the DAG topology.
+#' @param capacities  Optional tibble of `tier` and `capacity`, one row per
+#'                    resource the graph's nodes are labelled with.
+#' @param base_latency Optional tibble of `tier` and `base_ms`, same labels.
 #' @return A list containing the full environment specification.
-init_environment <- function(graph, load_level, n_agents, graph_type) {
+init_environment <- function(graph, load_level, n_agents, graph_type,
+                             capacities = NULL, base_latency = NULL) {
   # Per-tier resource capacities (units: tasks that can be served per round)
-  capacities <- tibble(
+  capacities <- capacities %||% tibble(
     tier     = c("device", "edge", "cloud"),
     capacity = c(200, 300, 500)
   )
@@ -305,7 +314,7 @@ init_environment <- function(graph, load_level, n_agents, graph_type) {
   # demand weights and not the measured latencies is what made the agentic
   # experiment score a real workload against deadlines it misses by a factor of
   # three.
-  base_latency <- tibble(
+  base_latency <- base_latency %||% tibble(
     tier    = c("device", "edge", "cloud"),
     base_ms = if (graph_type == "agentic") {
       unname(agentic_base_latency()[c("device", "edge", "cloud")])
