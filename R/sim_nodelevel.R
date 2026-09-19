@@ -185,8 +185,8 @@ node_cluster <- function(graph_type) {
 #' @param interface  "off", "inner" or "maxflow".
 #' @return An environment list.
 node_run_env <- function(graph_type, load_level, N, leaf_mix = "uniform",
-                         interface = "off", advertise_frac = NULL) {
-  spec <- node_instance(graph_type)
+                         interface = "off", advertise_frac = NULL,
+                         spec = node_instance(graph_type)) {
   if (interface != "off") {
     cl <- node_cluster(graph_type)
     spec <- contract_cluster(
@@ -769,7 +769,8 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param eta              Price step size.
 #' @param success_lr       Learning rate for the success model.
 #' @return A single-row tibble of summary metrics.
-node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
+node_run_single <- function(graph_type = c("tree", "sp", "entangled",
+                                           "agentic"),
                             load_level = c("medium", "high", "low"),
                             N = 90L, seed = 1L, n_rounds = 200L,
                             deadlines = c(500L, 750L, 1000L),
@@ -785,6 +786,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
                                           "greedy_ev", "posted_price", "k8s"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
+                            spec = NULL,
                             exact_reference = TRUE,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3) {
@@ -804,11 +806,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled"),
   # Two environments, and the difference between them IS the interface: the
   # market clears against the ADVERTISED region and delivery is evaluated
   # against the TRUE instance. At interface "off" they are the same region.
+  spec_used <- spec %||% node_instance(graph_type)
   env_true <- scale_capacities(
-    node_run_env(graph_type, load_level, N, leaf_mix, "off"), cap_scale)
+    node_run_env(graph_type, load_level, N, leaf_mix, "off",
+                 spec = spec_used), cap_scale)
   env_adv  <- scale_capacities(
     node_run_env(graph_type, load_level, N, leaf_mix, interface,
-                 advertise_frac), cap_scale)
+                 advertise_frac, spec = spec_used), cap_scale)
   agents   <- init_agents(N)
   providers <- leaf_providers(agents, rownames(env_true$anc))
 
@@ -1171,4 +1175,73 @@ node_instance_diagnostics <- function(mixes = c("uniform", "skewed")) {
       demand_cloud         = sum(dw[names(phys)[phys == "cloud"]])
     )
   })
+}
+
+
+# ===========================================================================
+# Aggregation and statistics for the node arms
+# ===========================================================================
+
+#' Mean every measured column of a node result set, per cell.
+#'
+#' One aggregator for every node experiment rather than six. The per-tier
+#' aggregators name their columns, and those lists do not describe a node row:
+#' they average a compliance share, a coverage share, a slice price and a
+#' deadline-satisfaction rate that this substrate does not produce, and they
+#' omit the exactness gap, the over-commitment and the stranded demand that it
+#' does. Averaging what a row actually carries is both smaller and closer to
+#' the measurement.
+#'
+#' @param results_list Per-seed result rows.
+#' @param by           Cell variables to group by.
+#' @return One row per cell.
+node_aggregate <- function(results_list, by) {
+  bind_rows(results_list) %>%
+    group_by(across(all_of(by))) %>%
+    summarise(across(where(\(x) is.numeric(x) || is.logical(x)),
+                     \(x) mean(as.numeric(x), na.rm = TRUE)),
+              .groups = "drop")
+}
+
+#' The responses a node arm is contrasted on.
+#'
+#' @return Character vector of column names.
+node_metrics <- function() {
+  c("median_latency", "drop_rate", "utilisation", "welfare", "efficiency",
+    "mean_price_volatility", "mean_price_volatility_tail",
+    "greedy_exact_ratio", "tokens_admitted", "served_among_admitted")
+}
+
+#' Per-cell summary of one factor over the node responses.
+#'
+#' The shape stat_exp1 and stat_exp4 produce, over the columns a node row
+#' carries. A response that is constant across every cell is dropped rather
+#' than bootstrapped, since a confidence interval on a structural zero is not
+#' a measurement.
+#'
+#' @param raw_df    Per-seed node results.
+#' @param group_var The factor the cells are contrasted on.
+#' @param metrics   Responses to summarise.
+#' @return A list of per-cell summaries and the ART interaction on welfare.
+node_stat_factor <- function(raw_df, group_var, metrics = node_metrics()) {
+  metrics <- intersect(metrics, names(raw_df))
+  metrics <- metrics[vapply(metrics, function(m) {
+    v <- raw_df[[m]][is.finite(raw_df[[m]])]
+    length(v) > 0L && diff(range(v)) > 0
+  }, logical(1))]
+
+  by_tl <- raw_df %>%
+    group_by(graph_type, load_level) %>%
+    group_split() %>%
+    setNames(., sapply(., function(d)
+      paste(d$graph_type[1], d$load_level[1], sep = "_")))
+  per_tl <- lapply(by_tl, function(d)
+    stat_summary_single_factor(d, group_var, metrics))
+
+  cells <- c(group_var, "graph_type", "load_level")
+  list(per_topo_load = per_tl,
+       interaction = art_anova(
+         raw_df %>% mutate(across(all_of(cells), factor)),
+         stats::reformulate(paste(cells, collapse = " * "),
+                            response = "welfare")))
 }

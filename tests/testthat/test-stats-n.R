@@ -204,6 +204,12 @@ test_that("stats_report warns when a listed experiment contributes no rows", {
 
 
 # ---- pinned value from the pipeline store -----------------------------------
+#
+# This pin reads its sample out of the LIVE store rather than out of a fixture,
+# so it stands only while the store keeps that object. The node arms take new
+# target names and never overwrite it, and nothing in this campaign prunes;
+# a copy of the store is not what this test reads, so the copy does not
+# protect it.
 
 test_that("the entangled/high naive mechanism cell reproduces H = 27.53 on n = 40", {
   skip_if_not(requireNamespace("targets", quietly = TRUE), "targets not installed")

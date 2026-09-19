@@ -218,7 +218,10 @@ test_that("the onset statistic carries the agentic arm through", {
 
 # ---- the grids reach each arm's onset ---------------------------------------
 
-test_that("the Exp.2 grid spans N = 10 to 120 at medium and at high load", {
+test_that("the per-tier Exp.2 grid spans N = 10 to 120 at medium and at high load", {
+  # The per-tier arm's own grid. The node sweep refines it to twenty-eight
+  # points and is pinned in test-node-sweep.R; this one is unchanged, so the
+  # branches already computed under it stay valid.
   grid <- grid_of("exp2_param_grid")
 
   expect_equal(sort(unique(grid$N)), seq(10, 120, by = 10))

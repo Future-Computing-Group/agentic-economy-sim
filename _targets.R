@@ -574,6 +574,378 @@ list(
   ),
 
   # ===========================================================================
+  # The node-level evaluation: the leaf-block market at the evaluation's scale
+  # ===========================================================================
+  # One node set, one capacity vector, one arrival stream. The arms differ in
+  # which leaves each internal node reaches. Populations put all three
+  # instances at the same offered load, so the level names carry a structural
+  # treatment and not a demand profile.
+  #
+  # Every target here takes a NEW name, so no per-tier object is overwritten
+  # and the two evaluations sit side by side in one store.
+  tar_target(node_agent_counts, node_agents()),
+  tar_target(node_lambda, node_lambda_l()),
+  tar_target(node_instance_table, node_instance_diagnostics()),
+
+  # -- structure at matched load ---------------------------------------------
+  tar_target(
+    node_exp1_param_grid,
+    crossing(graph_type = graph_types, load_level = load_levels,
+             seed = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp1_results_raw,
+    node_run_single(
+      graph_type       = node_exp1_param_grid$graph_type,
+      load_level       = node_exp1_param_grid$load_level,
+      seed             = node_exp1_param_grid$seed,
+      N                = node_agent_counts[[node_exp1_param_grid$graph_type]],
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp1_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp1_summary_table,
+             node_aggregate(node_exp1_results_raw, c("graph_type", "load_level"))),
+  tar_target(node_stats_exp1, stat_exp1(bind_rows(node_exp1_results_raw))),
+
+  # -- the population sweep --------------------------------------------------
+  tar_target(node_exp2_param_grid, node_sweep_grid(n_seeds)),
+  tar_target(
+    node_exp2_results_raw,
+    node_run_single(
+      graph_type       = node_exp2_param_grid$graph_type,
+      load_level       = node_exp2_param_grid$load_level,
+      seed             = node_exp2_param_grid$seed,
+      N                = node_exp2_param_grid$N,
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda,
+      # The sweep's instrument is the onset of a non-zero price series, which
+      # the exact reference has no part in and which pays for it 1680 times.
+      exact_reference  = FALSE
+    ),
+    pattern   = map(node_exp2_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp2_summary_table,
+             node_aggregate(node_exp2_results_raw,
+                            c("graph_type", "load_level", "N"))),
+  tar_target(node_stats_exp2, stat_exp2(bind_rows(node_exp2_results_raw),
+                                        rho_fn = node_rho_bottleneck)),
+
+  # -- governance: the dose-and-determinant instrument -----------------------
+  tar_target(
+    node_exp3_param_grid,
+    tidyr::expand_grid(
+      policy     = c("none", "trust", "locality", "role",
+                     "residency", "residency_sliced"),
+      graph_type = graph_types,
+      load_level = c("medium", "high"),
+      seed       = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp3_results_raw,
+    node_run_single(
+      graph_type       = node_exp3_param_grid$graph_type,
+      load_level       = node_exp3_param_grid$load_level,
+      seed             = node_exp3_param_grid$seed,
+      N                = node_agent_counts[[node_exp3_param_grid$graph_type]],
+      policy           = node_exp3_param_grid$policy,
+      # The coupled pair has to be asymmetric for the slice to strand
+      # anything: at uniform shares both half budgets are exhausted.
+      leaf_mix         = "skewed",
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp3_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp3_summary_table,
+             node_aggregate(node_exp3_results_raw,
+                            c("policy", "graph_type", "load_level"))),
+  tar_target(node_stats_exp3,
+             node_stat_factor(bind_rows(node_exp3_results_raw), "policy")),
+
+  # -- the cap-target factor: the exactness-repair instrument ----------------
+  tar_target(
+    node_exp3b_param_grid,
+    tidyr::expand_grid(cap_target = c("l1", "l2", "l3", "l4"),
+                       load_level = c("medium", "high"),
+                       seed       = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp3b_results_raw,
+    node_run_single(
+      graph_type       = "entangled",
+      load_level       = node_exp3b_param_grid$load_level,
+      seed             = node_exp3b_param_grid$seed,
+      N                = node_agent_counts[["entangled"]],
+      cap_target       = node_exp3b_param_grid$cap_target,
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp3b_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp3b_summary_table,
+             node_aggregate(node_exp3b_results_raw,
+                            c("cap_target", "load_level"))),
+
+  # -- the architecture x smoothing factorial --------------------------------
+  tar_target(
+    node_exp4_param_grid,
+    tidyr::expand_grid(
+      architecture = c("naive", "naive_ema", "hybrid_noema", "hybrid_ema"),
+      graph_type   = graph_types,
+      load_level   = c("medium", "high"),
+      seed         = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp4_results_raw,
+    node_run_single(
+      graph_type       = node_exp4_param_grid$graph_type,
+      load_level       = node_exp4_param_grid$load_level,
+      seed             = node_exp4_param_grid$seed,
+      N                = node_agent_counts[[node_exp4_param_grid$graph_type]],
+      architecture     = node_exp4_param_grid$architecture,
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp4_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp4_summary_table,
+             node_aggregate(node_exp4_results_raw,
+                            c("architecture", "graph_type", "load_level"))),
+  tar_target(node_stats_exp4, stat_exp4(bind_rows(node_exp4_results_raw))),
+  # One matched population per topology, so N is not a cell variable here: as a
+  # factor of the model it would carry a single level inside every cell.
+  tar_target(node_stats_exp4_factorial,
+             stat_exp4_factorial(bind_rows(node_exp4_results_raw),
+                                 cell_vars = c("graph_type", "load_level"))),
+
+  # -- the interface block, the node-level successor of the faithfulness arm --
+  tar_target(
+    node_exp10_param_grid,
+    tidyr::expand_grid(interface  = c("off", "inner", "maxflow"),
+                       graph_type = graph_types,
+                       seed       = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp10_results_raw,
+    node_run_single(
+      graph_type       = node_exp10_param_grid$graph_type,
+      load_level       = "high",
+      seed             = node_exp10_param_grid$seed,
+      N                = node_agent_counts[[node_exp10_param_grid$graph_type]],
+      interface        = node_exp10_param_grid$interface,
+      # At uniform shares the over-commitment on the exposed node is exactly
+      # zero, an arithmetic knife-edge, and the arm would measure a null that
+      # refutes no prediction.
+      leaf_mix         = "skewed",
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp10_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp10_summary_table,
+             node_aggregate(node_exp10_results_raw,
+                            c("interface", "graph_type"))),
+  tar_target(node_stats_exp10,
+             node_stat_factor(bind_rows(node_exp10_results_raw), "interface")),
+
+  # -- architecture x governance ---------------------------------------------
+  tar_target(
+    node_exp5_param_grid,
+    tidyr::expand_grid(architecture = c("naive", "hybrid_ema"),
+                       policy       = c("none", "locality"),
+                       graph_type   = graph_types,
+                       load_level   = c("medium", "high"),
+                       seed         = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp5_results_raw,
+    node_run_single(
+      graph_type       = node_exp5_param_grid$graph_type,
+      load_level       = node_exp5_param_grid$load_level,
+      seed             = node_exp5_param_grid$seed,
+      N                = node_agent_counts[[node_exp5_param_grid$graph_type]],
+      architecture     = node_exp5_param_grid$architecture,
+      policy           = node_exp5_param_grid$policy,
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp5_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp5_summary_table,
+             node_aggregate(node_exp5_results_raw,
+                            c("architecture", "policy", "graph_type",
+                              "load_level"))),
+  tar_target(node_stats_exp5,
+             node_stat_factor(bind_rows(node_exp5_results_raw), "policy")),
+
+  # -- the mechanism ablation ------------------------------------------------
+  tar_target(node_exp6_param_grid, exp6_mechanism_grid(n_seeds)),
+  tar_target(
+    node_exp6_results_raw,
+    node_run_single(
+      graph_type       = node_exp6_param_grid$graph_type,
+      load_level       = node_exp6_param_grid$load_level,
+      seed             = node_exp6_param_grid$seed,
+      N                = node_agent_counts[[node_exp6_param_grid$graph_type]],
+      mechanism        = node_exp6_param_grid$mechanism,
+      p_post_k         = node_exp6_param_grid$p_post_k,
+      architecture     = ifelse(node_exp6_param_grid$architecture == "hybrid",
+                                "hybrid_noema", "naive"),
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_summary_table,
+             node_aggregate(node_exp6_results_raw,
+                            c("mechanism", "p_post_k", "architecture",
+                              "graph_type", "load_level"))),
+  tar_target(node_stats_exp6, stat_exp6(bind_rows(node_exp6_results_raw))),
+
+  # -- the incentive arms, under the certificate -----------------------------
+  # The certified arms run at the evaluation populations, where the capacity
+  # vector already binds; the uncertified converse runs at the population the
+  # joint-misreport strategy set can be enumerated at, with the capacity
+  # scaled so it binds there too.
+  tar_target(
+    node_exp7_param_grid,
+    tidyr::expand_grid(graph_type = graph_types, seed = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp7a_results_raw,
+    exp7a_run_single(
+      graph_type = node_exp7_param_grid$graph_type,
+      load_level = "high",
+      N          = ifelse(node_exp7_param_grid$graph_type == "entangled", 8L,
+                          node_agent_counts[[node_exp7_param_grid$graph_type]]),
+      seed       = node_exp7_param_grid$seed,
+      substrate  = "node",
+      cap_scale  = ifelse(node_exp7_param_grid$graph_type == "entangled", 0.1, 1.0),
+      deadlines  = task_deadlines,
+      lambda_l_default = node_lambda,
+      n_rounds   = 30L
+    ),
+    pattern   = map(node_exp7_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp7a_summary_table,
+             exp7_aggregate(node_exp7a_results_raw)),
+  tar_target(node_stats_exp7a, stat_exp7(bind_rows(node_exp7a_results_raw))),
+  tar_target(
+    node_exp7b_results_raw,
+    exp7b_run_single(
+      graph_type = node_exp7_param_grid$graph_type,
+      load_level = "high",
+      N          = ifelse(node_exp7_param_grid$graph_type == "entangled", 8L,
+                          node_agent_counts[[node_exp7_param_grid$graph_type]]),
+      seed       = node_exp7_param_grid$seed,
+      substrate  = "node",
+      cap_scale  = ifelse(node_exp7_param_grid$graph_type == "entangled", 0.1, 1.0),
+      deadlines  = task_deadlines,
+      lambda_l_default = node_lambda,
+      n_rounds   = 30L
+    ),
+    pattern   = map(node_exp7_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp7b_summary_table,
+             exp7b_aggregate(node_exp7b_results_raw)),
+  tar_target(node_stats_exp7b, stat_exp7b(bind_rows(node_exp7b_results_raw))),
+
+  # -- the measured workload on the node substrate ---------------------------
+  # Both recordings are tracked as files, so a re-recording invalidates every
+  # arm that reads them instead of leaving them stale.
+  tar_target(node_agentic_files, agentic_profile_paths(), format = "file"),
+  tar_target(node_agentic_specs, list(
+    single = agentic_union_spec(node_agentic_files[1]),
+    union  = agentic_union_spec(node_agentic_files))),
+  tar_target(
+    node_exp9_param_grid,
+    tidyr::expand_grid(pattern      = c("single", "union"),
+                       architecture = c("naive", "naive_ema"),
+                       load_level   = c("medium", "high"),
+                       seed         = seq_len(n_seeds))
+  ),
+  tar_target(
+    node_exp9_results_raw,
+    {
+      sp <- node_agentic_specs[[node_exp9_param_grid$pattern]]
+      k  <- node_agentic_constants(sp)
+      node_run_single(
+        graph_type       = "agentic",
+        load_level       = node_exp9_param_grid$load_level,
+        seed             = node_exp9_param_grid$seed,
+        N                = 200L,
+        architecture     = node_exp9_param_grid$architecture,
+        spec             = sp,
+        n_rounds         = n_rounds,
+        deadlines        = k$deadlines,
+        lambda_l_default = k$lambda_l
+      ) %>% dplyr::mutate(pattern = node_exp9_param_grid$pattern)
+    },
+    pattern   = map(node_exp9_param_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp9_summary_table,
+             node_aggregate(node_exp9_results_raw,
+                            c("pattern", "architecture", "load_level"))),
+
+  # -- one-at-a-time parameter sensitivity -----------------------------------
+  tar_target(
+    node_exp14_sensitivity,
+    exp14_sensitivity_row(
+      parameter  = exp14_sweep_cells$parameter,
+      level      = exp14_sweep_cells$level,
+      topologies = graph_types,
+      seeds      = seq_len(5),
+      N          = node_agent_counts,
+      load_level = "high",
+      n_rounds   = n_rounds,
+      substrate  = "node"
+    ),
+    pattern   = map(exp14_sweep_cells),
+    iteration = "vector"
+  ),
+
+  # -- the machine-written statistics dump for the node arms -----------------
+  # Its own report rather than rows added to the per-tier one: that target
+  # depends on every per-tier statistics target, so building it would pull the
+  # whole per-tier pipeline in behind it.
+  tar_target(node_stats_report, make_stats_report(list(
+    exp1 = node_stats_exp1, exp2 = node_stats_exp2, exp3 = node_stats_exp3,
+    exp4 = node_stats_exp4, exp4_factorial = node_stats_exp4_factorial,
+    exp5 = node_stats_exp5, exp6 = node_stats_exp6,
+    exp10 = node_stats_exp10,
+    exp7a = node_stats_exp7a, exp7b = node_stats_exp7b))),
+  tar_target(
+    node_stats_report_file,
+    {
+      dir.create("results", showWarnings = FALSE, recursive = TRUE)
+      readr::write_csv(node_stats_report, "results/node-stats-report.csv")
+      "results/node-stats-report.csv"
+    },
+    format = "file"
+  ),
+
+  # ===========================================================================
   # Statistical analysis (all experiments)
   # ===========================================================================
   tar_target(stats_exp1, stat_exp1(bind_rows(exp1_results_raw))),

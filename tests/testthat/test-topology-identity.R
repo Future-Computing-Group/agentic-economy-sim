@@ -1,6 +1,13 @@
-# The matched-topology control, discharged as an identity rather than as a run.
+# The matched-topology control on the PER-TIER substrate, discharged as an
+# identity rather than as a run.
 #
-# The simulator reads exactly three things from a topology object: the per-tier
+# This file is the artefact that records why a node-level substrate exists, and
+# it now records both halves of it: on the per-tier substrate two drawings
+# matched on what the simulator reads are the same run, and on the node
+# substrate they are not. The last test below is that second half.
+#
+# On the per-tier substrate the simulator reads exactly three things from a
+# topology object: the per-tier
 # demand profile it induces, the tier sequence along its critical path, and a
 # node count that is dead whenever demand weights are present. Node identity and
 # edge structure have no further effect. Two topologies matched on the first two
@@ -158,4 +165,34 @@ test_that("unmatching the demand profile separates the runs", {
 test_that("unmatching the critical-path tier sequence separates the runs", {
   expect_false(isTRUE(all.equal(run_fixed(spec_tree()),
                                 run_fixed(spec_short()))))
+})
+
+
+# ---- and what a node-indexed substrate reads instead ------------------------
+
+test_that("matched drawings separate once the resources are the service nodes", {
+  # The before-and-after of the whole rebuild. The tree and the crossing
+  # instance share a node set, a capacity vector, a critical-path tier
+  # sequence, the population at which the first node saturates, and an arrival
+  # stream; they differ in one arc. On the per-tier substrate a difference of
+  # that kind reaches nothing and the runs above are identical by
+  # construction. Here the arc changes which leaves a node is an ancestor of,
+  # so it reaches the region the market clears over, and the runs separate.
+  a <- node_env("tree", "high", 90L)
+  b <- node_env("entangled", "high", 90L)
+  expect_equal(a$capacities, b$capacities)
+  expect_equal(base_latency_for_bids(a), base_latency_for_bids(b))
+  expect_equal(unname(base_latency_per_leaf(a)), unname(base_latency_per_leaf(b)))
+  expect_equal(node_k_c(a), node_k_c(b))
+  # The demand profile is where the arc lands, and it is a PER-NODE profile:
+  # there is no three-number summary of it for two drawings to agree on.
+  expect_false(isTRUE(all.equal(a$demand_weights, b$demand_weights)))
+
+  tree <- node_run_single("tree", "high", N = 90L, seed = 1L, n_rounds = 10L)
+  ent  <- node_run_single("entangled", "high", N = 90L, seed = 1L, n_rounds = 10L)
+  expect_false(isTRUE(all.equal(tree$welfare, ent$welfare)))
+  # And the channel it separates on is the structural one, not the demand one:
+  # the exact reference is reached on one arm and not on the other.
+  expect_equal(tree$greedy_exact_incidence, 0)
+  expect_gt(ent$greedy_exact_incidence, 0)
 })
