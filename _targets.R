@@ -118,7 +118,12 @@ list(
     exp2_param_grid,
     tidyr::expand_grid(
       graph_type = c("tree", "sp", "entangled"),
-      N          = seq(10, 60, by = 10),
+      # The grid reaches past every topology's price-dispersion onset. sp and
+      # entangled leave the reserve well inside the first half of it; tree, the
+      # slackest of the three in bottleneck demand per task, does not, so a grid
+      # that stopped at 60 reported a flat zero for tree and could not place the
+      # transition. stat_exp2() computes the onset from these runs.
+      N          = seq(10, 120, by = 10),
       seed       = seq_len(n_seeds),
       load_level = "medium"
     )

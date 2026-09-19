@@ -191,9 +191,9 @@ test_that("stats_report has one row per test with the required columns", {
 })
 
 test_that("stats_report warns when a listed experiment contributes no rows", {
-  # stat_exp2 reports Spearman correlations, not Kruskal-Wallis tests, so it
-  # contributes nothing to the dump. A listed experiment must never vanish from
-  # the transcription source in silence.
+  # An experiment summary made only of correlations carries no statistic in the
+  # harvested shape, so it contributes nothing to the dump. A listed experiment
+  # must never vanish from the transcription source in silence.
   no_kruskal <- list(correlations = list(
     tree = tibble::tibble(metric = "welfare", rho = 0.99, p_value = 1e-6)
   ))

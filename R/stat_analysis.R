@@ -378,10 +378,55 @@ stat_exp1 <- function(raw_df) {
 }
 
 
+#' Price-dispersion onset per topology.
+#'
+#' Below the population at which the bottleneck tier starts to contend, every
+#' round of a run clears at the reserve, so the dispersion column is identically
+#' zero: a monotone correlation with N summarises the whole sweep but cannot say
+#' where the market starts pricing. The onset is that boundary, taken on the
+#' across-seed mean so that a single dispersing seed does not move it, and
+#' reported beside the share of seeds that have already crossed it.
+#'
+#' It is also reported as rho, the bottleneck offered load at the onset
+#' population, from rho_bottleneck() in R/sim_helpers.R: the same definition the
+#' operating point is calibrated on and tests/testthat/test-operating-point.R
+#' pins. The topologies differ by 2.5x in bottleneck demand per task, so their
+#' onsets are comparable on offered load, not on agent count.
+#'
+#' @param raw_df Per-seed results from exp2_results_raw.
+#' @return A tibble, one row per graph_type: N_onset (NA when no N in the grid
+#'   leaves zero), seeds_nonzero_at_onset, n_seeds_at_onset, rho_onset.
+exp2_price_onset <- function(raw_df) {
+  raw_df %>%
+    group_by(.data$graph_type, .data$load_level, .data$N) %>%
+    summarise(
+      mean_cv      = mean(.data$mean_price_volatility, na.rm = TRUE),
+      frac_nonzero = mean(.data$mean_price_volatility > 0, na.rm = TRUE),
+      n_seeds      = dplyr::n(),
+      .groups      = "drop"
+    ) %>%
+    arrange(.data$N) %>%
+    group_by(.data$graph_type) %>%
+    summarise(
+      i                      = which(.data$mean_cv > 0)[1],
+      N_onset                = .data$N[i],
+      seeds_nonzero_at_onset = .data$frac_nonzero[i],
+      n_seeds_at_onset       = .data$n_seeds[i],
+      rho_onset              = if (is.na(i)) NA_real_ else
+        rho_bottleneck(dplyr::cur_group()$graph_type, .data$N[i],
+                       .data$load_level[i]),
+      .groups                = "drop"
+    ) %>%
+    select(-"i")
+}
+
+
 #' Statistical summary for Experiment 2 (scaling).
 #'
 #' @param raw_df Per-seed results from exp2_results_raw.
-#' @return A list with Spearman correlations per topology.
+#' @return A list: Spearman correlations per topology, the price-dispersion
+#'   onset table, and one element per topology in the shape make_stats_report
+#'   harvests.
 stat_exp2 <- function(raw_df) {
   metrics <- c("median_latency", "drop_rate", "utilisation",
                "mean_price_volatility", "welfare")
@@ -398,7 +443,23 @@ stat_exp2 <- function(raw_df) {
     }) %>% bind_rows()
   })
 
-  list(correlations = correlations)
+  onset <- exp2_price_onset(raw_df)
+  report <- lapply(split(onset, onset$graph_type), function(d) {
+    list(statistics = tibble(
+      metric    = c("exp2_onset_N", "exp2_onset_rho",
+                    "exp2_onset_seeds_nonzero"),
+      group_var = "N",
+      statistic = c(as.numeric(d$N_onset), d$rho_onset,
+                    d$seeds_nonzero_at_onset),
+      df        = NA_integer_,
+      n         = as.integer(d$n_seeds_at_onset),
+      p_value   = NA_real_,
+      # The tripwire is a range check on a Kruskal-Wallis H against its n. An
+      # onset has no such check, and NA says so rather than claiming one.
+      tripwire_ok = NA))
+  })
+
+  c(list(correlations = correlations, onset = onset), report)
 }
 
 
@@ -862,9 +923,9 @@ make_stats_report <- function(stats_list) {
     df <- collect(stats_list[[e]], character())
     if (is.null(df) || nrow(df) == 0L) {
       # A listed experiment must never vanish from the transcription source in
-      # silence: stat_exp2 reports Spearman correlations, not Kruskal-Wallis
-      # tests, so it contributes nothing here and the supplement must take its
-      # statistics from elsewhere.
+      # silence. An experiment whose summary is entirely of another shape --
+      # a correlation, say -- contributes nothing here, and the supplement then
+      # has to take its statistics from elsewhere.
       warning(sprintf("stats_report: %s contributed no rows", e), call. = FALSE)
       return(NULL)
     }

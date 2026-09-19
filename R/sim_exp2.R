@@ -2,10 +2,14 @@
 # ---------------------------------------------------------------------------
 # Experiment 2: Agent scaling x topology
 #
-# Varies the number of agents (N = 10, 20, ..., 60) across three topologies
+# Varies the number of agents (N = 10, 20, ..., 120) across three topologies
 # (tree/sp/entangled) at medium load.  Shows that the rate of performance
 # degradation with increasing agent population depends on DAG structure,
 # reinforcing that topology is a first-order determinant.
+#
+# The range reaches past the point where each topology's clearing price leaves
+# the reserve, so the price-dispersion onset is inside the grid for all three
+# rather than only for the two that contend earliest; stat_exp2() reports it.
 #
 # Paper reference: Section VII-B, Table VI (Exp2).
 # ---------------------------------------------------------------------------
