@@ -2325,6 +2325,239 @@ node_report_stability_summary <- function(rows) {
 
 
 # ===========================================================================
+# What the market does after something breaks
+# ===========================================================================
+
+#' Scale one node's capacity, in both places the environment keeps it.
+#'
+#' Admission packs against `capacities` and execution queues against the copy
+#' in `per_tier`, so a shock that moved one and not the other would bind at
+#' admission and leave execution queueing on the unshocked node. The same rule
+#' the capacity knob follows, for one node rather than all of them.
+#'
+#' @param env    Environment list.
+#' @param node   The node to scale.
+#' @param factor Multiplier on its capacity.
+#' @return The environment, that node's capacity scaled.
+node_scale_node_capacity <- function(env, node, factor) {
+  if (factor == 1) return(env)
+  hit <- function(df) mutate(df, capacity = ifelse(tier == node,
+                                                   capacity * factor, capacity))
+  env$capacities <- hit(env$capacities)
+  env$per_tier   <- hit(env$per_tier)
+  env
+}
+
+#' The edge node its own demand fills first.
+#'
+#' The leaves under a node carry a share of the arrivals; the node whose share
+#' is largest against its own capacity is the one that binds. Restricted to
+#' the edge tier, which is where a capacity loss is a deployment event rather
+#' than the device or the whole cloud going away.
+#'
+#' @param env Environment list.
+#' @return The node's name.
+node_binding_edge_node <- function(env) {
+  anc  <- env$anc
+  phys <- setNames(env$spec$nodes$phys, env$spec$nodes$node)
+  C    <- node_token_capacity(env)
+  s_v  <- setNames(as.numeric(crossprod(anc, env$leaf_shares[rownames(anc)])),
+                   colnames(anc))
+  edge <- intersect(names(s_v), names(phys)[phys == "edge"])
+  edge[[which.max(s_v[edge] / C[edge])]]
+}
+
+#' The market arm through a shock, beside the same seed without one.
+#'
+#' Two shocks: half the binding edge node's capacity for a stretch of rounds,
+#' and a burst of arrivals at twice the rate for a shorter one. The control
+#' runs the same seed with no shock at all, so the loss is paired round by
+#' round rather than taken against a level.
+#'
+#' The advertised region is derived before the shock and is not re-derived, so
+#' the contracted arm keeps advertising a slice its nodes can no longer carry
+#' and the loss lands on delivery; the uncontracted arm meets it at admission.
+#' That difference between the arms is the measurement.
+#'
+#' @param graph_type       Arm: "tree", "sp" or "entangled".
+#' @param architecture     "naive" or a contracted level.
+#' @param shock            "capacity" or "burst".
+#' @param load_level       Load regime.
+#' @param N                Agent population; the arm's own by default.
+#' @param seed             Random seed.
+#' @param n_rounds         Number of rounds.
+#' @param shock_start      First round the shock is on.
+#' @param capacity_end     First round after the capacity shock.
+#' @param burst_end        First round after the burst.
+#' @param capacity_factor  What the binding node's capacity is multiplied by.
+#' @param burst_factor     What the arrival rate is multiplied by.
+#' @param iters            Tatonnement iterations per round.
+#' @param deadlines        Integer vector of possible deadlines (ms).
+#' @param leaf_mix         "uniform" or "skewed".
+#' @param lambda_l_default Per-ms value-decay rate.
+#' @param alpha            Congestion sensitivity.
+#' @param p                Congestion exponent.
+#' @param salvage          Value retained after a deadline miss.
+#' @param eta              Price step size.
+#' @param success_lr       Learning rate for the success model.
+#' @return One row per round, the shocked run beside its control.
+node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
+                           architecture = c("naive", "naive_ema",
+                                            "hybrid_noema", "hybrid_ema"),
+                           shock = c("capacity", "burst"),
+                           load_level = "high", N = NULL, seed = 1L,
+                           n_rounds = 200L, shock_start = 100L,
+                           capacity_end = 150L, burst_end = 110L,
+                           capacity_factor = 0.5, burst_factor = 2,
+                           iters = 15L, deadlines = c(500L, 750L, 1000L),
+                           leaf_mix = "uniform",
+                           lambda_l_default = node_lambda_l(),
+                           alpha = 50, p = 1.2, salvage = 0.0,
+                           eta = price_eta, success_lr = 0.3) {
+  graph_type   <- match.arg(graph_type)
+  architecture <- match.arg(architecture)
+  shock        <- match.arg(shock)
+  N    <- N %||% node_agents()[[graph_type]]
+  arch <- node_architecture(architecture)
+
+  one_run <- function(shocked) {
+    set.seed(seed)
+    env_true <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
+    env_adv  <- node_run_env(graph_type, load_level, N, leaf_mix,
+                             arch$interface)
+    node     <- node_binding_edge_node(env_true)
+    agents    <- init_agents(N)
+    ms        <- init_market_state(env_adv)
+    prev_util <- NULL
+    out <- vector("list", n_rounds)
+    for (t in seq_len(n_rounds)) {
+      on <- shocked && t >= shock_start &&
+        t < (if (shock == "capacity") capacity_end else burst_end)
+      # The capacity loss is physical, so it hits the true instance and the
+      # advertised region wherever that region still names the node.
+      eT <- if (on && shock == "capacity")
+        node_scale_node_capacity(env_true, node, capacity_factor) else env_true
+      eA <- if (on && shock == "capacity")
+        node_scale_node_capacity(env_adv, node, capacity_factor) else env_adv
+      # The burst is a demand event: it moves the arrival rate the tasks are
+      # drawn at and nothing the nodes do.
+      eGen <- if (on && shock == "burst") {
+        e <- eA; e$load_factor <- burst_factor * e$load_factor; e
+      } else eA
+
+      tasks <- node_round_tasks(eGen, agents, t, seed, deadlines)
+      bid   <- node_bid_inputs(eA, tasks, prev_util)
+      cleared <- clear_multitier_market(
+        tasks, eA, bid$util_hat, bid$base_latency, ms,
+        alpha = alpha, p = p, lambda_l_default = lambda_l_default,
+        salvage = salvage, iters = iters, eta = eta, beta = arch$beta)
+      ms <- append_price_history(cleared$market_state,
+                                 cleared$market_state$prices)
+
+      capv   <- setNames(tier_capacities(eA)$capacity, tier_capacities(eA)$tier)
+      demand <- node_round_demand(tasks, eA, cleared$surplus)[names(capv)]
+      prices <- setNames(cleared$clearing$prices$price,
+                         cleared$clearing$prices$tier)[names(capv)]
+      ok <- node_market_equilibrium(demand, capv, prices,
+                                    eA$reserve_price %||% 0)
+
+      results_t <- execute_allocation(cleared$allocation, eT)
+      agents    <- update_trust(agents, results_t)
+      prev_util <- compute_utilisation_per_node(eA, cleared$allocation)
+      welfare   <- compute_welfare(results_t, eT, cleared$clearing$prices,
+                                   lambda_l_default = lambda_l_default,
+                                   salvage = salvage, cong_cost = TRUE,
+                                   cong_gamma = 0.05)
+      ms <- market_update_from_results(
+        ms, if (nrow(tasks) == 0L) 0 else mean(bid$util_hat), results_t,
+        lr = success_lr)
+
+      out[[t]] <- tibble(round = t, in_shock = on, n_offered = nrow(tasks),
+                         admitted = nrow(cleared$allocation),
+                         unit_cost = cleared$clearing$unit_cost,
+                         resid_excess = cleared$clearing$resid_excess,
+                         equilibrium_ok = ok, welfare = welfare)
+    }
+    bind_rows(out)
+  }
+
+  shocked <- one_run(TRUE)
+  control <- one_run(FALSE)
+  shocked %>%
+    mutate(graph_type = graph_type, architecture = architecture, shock = shock,
+           load_level = load_level, N = as.integer(N), seed = as.integer(seed),
+           shock_start = as.integer(shock_start),
+           admitted_control = control$admitted,
+           n_offered_control = control$n_offered,
+           welfare_control = control$welfare) %>%
+    select(graph_type, architecture, shock, load_level, N, seed, shock_start,
+           round, in_shock, n_offered, n_offered_control, admitted,
+           admitted_control, unit_cost, resid_excess, equilibrium_ok, welfare,
+           welfare_control)
+}
+
+#' The first round after the shock that stays settled.
+#'
+#' A single settled round inside a run of unsettled ones is not a recovery, so
+#' the response is the first round from which the check holds for `hold`
+#' rounds together. NA where it never does: a missing recovery is reported as
+#' missing rather than as the last round.
+#'
+#' @param ok    Per-round logical series.
+#' @param from  First round of the shock.
+#' @param hold  Rounds the check has to hold.
+#' @return Rounds after the shock, or NA.
+node_rounds_to_resettle <- function(ok, from, hold = 5L) {
+  n <- length(ok)
+  for (i in seq.int(from, n)) {
+    if (i + hold - 1L > n) break
+    if (all(ok[i:(i + hold - 1L)])) return(i - from)
+  }
+  NA_real_
+}
+
+#' What the shock cost and how long it took to pass.
+#'
+#' @param rows         Per-round rows from node_shock_run().
+#' @param hold         Rounds the equilibrium check has to hold.
+#' @param settled_tail Rounds at the end that define the settled price level.
+#' @return One row per branch.
+node_shock_summary <- function(rows, hold = 5L, settled_tail = 25L) {
+  rows %>%
+    group_by(graph_type, architecture, shock, seed) %>%
+    summarise(
+      n_rounds    = dplyr::n(),
+      shock_start = dplyr::first(shock_start),
+      rounds_to_resettle = node_rounds_to_resettle(
+        equilibrium_ok, dplyr::first(shock_start), hold),
+      # The same reading on the residual, for the runs whose check never
+      # settles: a walk can clear its over-demand without ever satisfying
+      # complementary slackness.
+      rounds_to_resettle_resid = node_rounds_to_resettle(
+        resid_excess <= 1e-9, dplyr::first(shock_start), hold),
+      price_overshoot = max(unit_cost[round >= dplyr::first(shock_start)],
+                            na.rm = TRUE) /
+        mean(tail(unit_cost, settled_tail), na.rm = TRUE),
+      welfare_lost = sum((welfare_control - welfare)[
+        round >= dplyr::first(shock_start)], na.rm = TRUE),
+      admitted_lost = sum((admitted_control - admitted)[
+        round >= dplyr::first(shock_start)], na.rm = TRUE),
+      .groups = "drop")
+}
+
+#' The grid the shock block branches over.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_shock_grid <- function(n_seeds) {
+  tidyr::expand_grid(graph_type   = c("tree", "sp", "entangled"),
+                     architecture = c("naive", "hybrid_noema"),
+                     shock        = c("capacity", "burst"),
+                     seed         = seq_len(n_seeds))
+}
+
+
+# ===========================================================================
 # The onset law: the first node crossing
 # ===========================================================================
 

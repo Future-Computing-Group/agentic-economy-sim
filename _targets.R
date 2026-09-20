@@ -963,6 +963,27 @@ list(
   tar_target(node_exp6_report_stability_summary,
              node_report_stability_summary(bind_rows(node_exp6_report_stability))),
 
+  # -- what the market does after something breaks --------------------------
+  tar_target(node_exp6_shock_grid, node_shock_grid(n_seeds)),
+  tar_target(
+    node_exp6_shock,
+    node_shock_run(
+      graph_type       = node_exp6_shock_grid$graph_type,
+      architecture     = node_exp6_shock_grid$architecture,
+      shock            = node_exp6_shock_grid$shock,
+      load_level       = "high",
+      N                = node_agent_counts[[node_exp6_shock_grid$graph_type]],
+      seed             = node_exp6_shock_grid$seed,
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_shock_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_shock_summary,
+             node_shock_summary(bind_rows(node_exp6_shock))),
+
   tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
   tar_target(
     node_exp6_sensitivity,
