@@ -1750,6 +1750,24 @@ node_eval_grid <- function(tuning_raw, seeds,
 #'
 #' @param x A column that must be constant.
 #' @return Its value.
+#' The driver level an evaluation grid row runs at.
+#'
+#' The evaluation grid is built from tuning results, whose architecture column
+#' already carries the driver's own level names, so on those names this is the
+#' identity; the design labels of the tuning grid map to their uncontracted and
+#' contracted driver levels. Anything else is an error rather than a silent
+#' fall-through to the uncontracted arm.
+#'
+#' @param x Character vector of architecture labels.
+#' @return Character vector of driver levels.
+node_eval_architecture <- function(x) {
+  levels <- c("naive", "naive_ema", "hybrid_noema", "hybrid_ema")
+  out <- ifelse(x %in% levels, x, ifelse(x == "hybrid", "hybrid_noema",
+                                         ifelse(x == "naive", "naive", NA_character_)))
+  stopifnot("an evaluation row carries an unknown architecture label" = !anyNA(out))
+  out
+}
+
 .one_of <- function(x) {
   stopifnot("a tuned cell ran more than one knob" = length(unique(x)) == 1L)
   x[[1]]

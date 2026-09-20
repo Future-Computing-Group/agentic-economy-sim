@@ -886,8 +886,7 @@ list(
       mechanism        = node_exp6_eval_grid$mechanism,
       p_post_k         = node_exp6_eval_grid$p_post_k,
       reserve_markup   = node_exp6_eval_grid$reserve_markup,
-      architecture     = ifelse(node_exp6_eval_grid$architecture == "hybrid",
-                                "hybrid_noema", "naive"),
+      architecture     = node_eval_architecture(node_exp6_eval_grid$architecture),
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda

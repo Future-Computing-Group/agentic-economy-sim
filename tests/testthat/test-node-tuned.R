@@ -135,3 +135,23 @@ test_that("the pipeline carries the tuned block as its own targets", {
   expect_true(grepl("node_exp6_param_grid, node_exp6_mechanism_grid(n_seeds)",
                     src, fixed = TRUE))
 })
+
+# The evaluation grid is built from tuning RESULTS, whose architecture column
+# already carries the driver's own level names. A target that re-maps a design
+# label onto those names would send every contracted cell down the uncontracted
+# path, so the grid must emit driver levels and the target must pass them on.
+test_that("the evaluation grid's architecture values are driver levels, passed through unchanged", {
+  tr <- tidyr::expand_grid(graph_type = "tree", load_level = "high",
+                           architecture = c("naive", "hybrid_noema"),
+                           mechanism = "posted_price", p_post_k = c(1, 2),
+                           reserve_markup = 1, seed = 1:2)
+  tr$welfare <- ifelse(tr$architecture == "naive", tr$p_post_k, 3 - tr$p_post_k)
+  eg <- node_eval_grid(tr, seeds = 11:12)
+  expect_true(all(eg$architecture %in% c("naive", "naive_ema", "hybrid_noema", "hybrid_ema")))
+  knobs <- eg %>% dplyr::filter(mechanism == "posted_price") %>%
+    dplyr::distinct(architecture, p_post_k)
+  expect_equal(knobs$p_post_k[knobs$architecture == "naive"], 2)
+  expect_equal(knobs$p_post_k[knobs$architecture == "hybrid_noema"], 1)
+  # the same mapping the pipeline applies must be the identity on these levels
+  expect_identical(node_eval_architecture(eg$architecture), eg$architecture)
+})
