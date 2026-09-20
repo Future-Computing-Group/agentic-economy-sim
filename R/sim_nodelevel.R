@@ -1223,7 +1223,10 @@ node_aggregate <- function(results_list, by) {
 #'
 #' @return Character vector of column names.
 node_metrics <- function() {
-  c("median_latency", "drop_rate", "utilisation", "welfare", "efficiency",
+  # arm_exact_ratio scores the arm's admitted set against the exact leaf-block
+  # optimum of the same round; the bid-time oracle ratio is a forecast
+  # calibration and is not contrasted.
+  c("median_latency", "drop_rate", "utilisation", "welfare", "arm_exact_ratio",
     "mean_price_volatility", "mean_price_volatility_tail",
     "greedy_exact_ratio", "tokens_admitted", "served_among_admitted")
 }
@@ -1239,25 +1242,69 @@ node_metrics <- function() {
 #' @param group_var The factor the cells are contrasted on.
 #' @param metrics   Responses to summarise.
 #' @return A list of per-cell summaries and the ART interaction on welfare.
-node_stat_factor <- function(raw_df, group_var, metrics = node_metrics()) {
+node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
+                             cell_vars = c("graph_type", "load_level"),
+                             interaction_vars = group_var) {
   metrics <- intersect(metrics, names(raw_df))
   metrics <- metrics[vapply(metrics, function(m) {
     v <- raw_df[[m]][is.finite(raw_df[[m]])]
     length(v) > 0L && diff(range(v)) > 0
   }, logical(1))]
 
-  by_tl <- raw_df %>%
-    group_by(graph_type, load_level) %>%
+  # One summary per cell the caller names, so a crossed design is cut on every
+  # factor it crosses and the contrasted factor is never pooled over another.
+  by_cell <- raw_df %>%
+    group_by(across(all_of(cell_vars))) %>%
     group_split() %>%
     setNames(., sapply(., function(d)
-      paste(d$graph_type[1], d$load_level[1], sep = "_")))
-  per_tl <- lapply(by_tl, function(d)
+      paste(vapply(cell_vars, function(v) as.character(d[[v]][1]), ""),
+            collapse = "_")))
+  per_cell <- lapply(by_cell, function(d)
     stat_summary_single_factor(d, group_var, metrics))
 
-  cells <- c(group_var, "graph_type", "load_level")
-  list(per_topo_load = per_tl,
+  cells <- unique(c(interaction_vars, "graph_type", "load_level"))
+  list(per_topo_load = per_cell,
        interaction = art_anova(
-         raw_df %>% mutate(across(all_of(cells), factor)),
+         raw_df %>% filter(is.finite(welfare)) %>%
+           mutate(across(all_of(cells), factor)),
          stats::reformulate(paste(cells, collapse = " * "),
                             response = "welfare")))
+}
+
+
+# ===========================================================================
+# The onset law: the first node crossing
+# ===========================================================================
+
+#' Expected number of price-moving rounds per seed at a population.
+#'
+#' Price dispersion is exactly zero until some node's demand exceeds its
+#' capacity in some round. A round's arrivals are Poisson with mean lambda N,
+#' the arrivals whose leaf sits under node v are a thinning at v's leaf share,
+#' so the tasks demanded at v are Poisson with mean s_v lambda N, and the
+#' onset is the first node crossing. That node is the one with the largest
+#' crossing probability, which is the node with the largest fluctuation
+#' relative to its own capacity, and it need not be the node that sets K_c:
+#' an edge node of fifty tasks fed by half the arrivals crosses before the
+#' root of one hundred fed by all of them.
+#'
+#' @param spec       An instance spec.
+#' @param leaf_mix   "uniform" or "skewed".
+#' @param load_level "low", "medium" or "high".
+#' @param N          Agent population (vectorised).
+#' @param n_rounds   Rounds per seed.
+#' @return A tibble with one row per N: `N`, `binding_node`, the per-node
+#'   crossing probability `p_cross` and `expected_crossings` per seed.
+node_onset_law <- function(spec, leaf_mix, load_level, N, n_rounds) {
+  anc    <- ancestor_matrix(spec)
+  Ctok   <- token_capacity(spec)[colnames(anc)]
+  shares <- node_leaf_shares(leaf_mix, rownames(anc))
+  s_v    <- setNames(as.numeric(crossprod(anc, shares)), colnames(anc))
+  lambda <- c(low = 0.5, medium = 1.0, high = 1.5)[[load_level]]
+  purrr::map_dfr(N, function(n) {
+    p <- 1 - stats::ppois(floor(Ctok), s_v * lambda * n)
+    v <- names(which.max(p))
+    tibble::tibble(N = n, binding_node = v, p_cross = p[[v]],
+                   expected_crossings = n_rounds * p[[v]])
+  })
 }
