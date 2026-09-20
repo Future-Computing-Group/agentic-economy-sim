@@ -2017,6 +2017,174 @@ node_convergence_summary <- function(rows) {
 
 
 # ===========================================================================
+# Are the prices a property of the round, or of where the walk started
+# ===========================================================================
+
+#' The widest disagreement between terminal price vectors, in floors.
+#'
+#' Normalised by the reserve the prices are anchored on, so the number reads
+#' the same on instances whose paths cost different amounts.
+#'
+#' @param price_list Named list of per-node price tibbles, one per start.
+#' @param reserve    The per-node reserve.
+#' @return Scalar, zero when every start landed on one vector.
+node_price_spread <- function(price_list, reserve) {
+  m <- vapply(price_list, function(p) p$price[order(p$tier)], 
+              numeric(nrow(price_list[[1]])))
+  if (is.null(dim(m))) m <- matrix(m, nrow = 1)
+  max(apply(m, 1, function(x) max(x) - min(x))) / reserve
+}
+
+#' Do these collections hold the same elements?
+#'
+#' @param sets List of character vectors.
+#' @return TRUE when every entry is the same set.
+node_sets_agree <- function(sets) {
+  all(vapply(sets, function(s) setequal(s, sets[[1]]), logical(1)))
+}
+
+#' The five starting price vectors a round is cleared from.
+#'
+#' The floor, twice the floor, the vector the pipeline carried into the round,
+#' and two draws. The draws live in the range the process itself occupies
+#' rather than anywhere below the price cap: the walk's step down per
+#' iteration is bounded by the step size, so a start at the cap could not be
+#' walked back from inside any budget and would measure the bound rather than
+#' the economy.
+#'
+#' @param env       Environment list.
+#' @param carried   The price tibble the pipeline carried into the round.
+#' @param seed      Seed for the two draws.
+#' @param floors    Upper end of the draws, in units of the reserve.
+#' @return Named list of price tibbles.
+node_price_starts <- function(env, carried, seed = 1L, floors = 20) {
+  reserve <- env$reserve_price %||% 0
+  flat <- function(v) tibble(tier = carried$tier, price = rep(v, nrow(carried)))
+  draw <- function(k) {
+    set.seed(seed * 104729L + k)
+    tibble(tier = carried$tier,
+           price = runif(nrow(carried), reserve, floors * reserve))
+  }
+  list(floor = flat(reserve), twice_floor = flat(2 * reserve),
+       carried = carried, random_1 = draw(1L), random_2 = draw(2L))
+}
+
+#' One round of the pipeline's market, cleared from every start.
+#'
+#' The demand stream, the carried price vector and the success model are the
+#' pipeline's; what varies inside a round is only the price vector the walk
+#' begins at. The round then advances on its carried clearing, so the rounds
+#' this block prices are the rounds the pipeline's market arm had.
+#'
+#' @param graph_type       Arm: "tree", "sp" or "entangled".
+#' @param load_level       Load regime.
+#' @param N                Agent population; the arm's own by default.
+#' @param seed             Random seed.
+#' @param n_rounds         Number of rounds.
+#' @param iters            Tatonnement iterations per clearing.
+#' @param deadlines        Integer vector of possible deadlines (ms).
+#' @param leaf_mix         "uniform" or "skewed".
+#' @param lambda_l_default Per-ms value-decay rate.
+#' @param alpha            Congestion sensitivity.
+#' @param p                Congestion exponent.
+#' @param salvage          Value retained after a deadline miss.
+#' @param eta              Price step size.
+#' @param success_lr       Learning rate for the success model.
+#' @return One row per round.
+node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
+                                 load_level = "high", N = NULL, seed = 1L,
+                                 n_rounds = 20L, iters = 1000L,
+                                 deadlines = c(500L, 750L, 1000L),
+                                 leaf_mix = "uniform",
+                                 lambda_l_default = node_lambda_l(),
+                                 alpha = 50, p = 1.2, salvage = 0.0,
+                                 eta = price_eta, success_lr = 0.3) {
+  graph_type <- match.arg(graph_type)
+  N   <- N %||% node_agents()[[graph_type]]
+  set.seed(seed)
+  env <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
+  agents    <- init_agents(N)
+  ms        <- init_market_state(env)
+  prev_util <- NULL
+  reserve   <- env$reserve_price %||% 0
+
+  rows <- vector("list", n_rounds)
+  for (t in seq_len(n_rounds)) {
+    tasks  <- node_round_tasks(env, agents, t, seed, deadlines)
+    bid    <- node_bid_inputs(env, tasks, prev_util)
+    starts <- node_price_starts(env, ms$prices, seed = seed * 1000L + t)
+
+    from <- lapply(starts, function(p0) {
+      state <- ms
+      state$prices <- p0
+      cleared <- clear_multitier_market(
+        tasks, env, bid$util_hat, bid$base_latency, state,
+        alpha = alpha, p = p, lambda_l_default = lambda_l_default,
+        salvage = salvage, iters = iters, eta = eta)
+      welfare <- compute_welfare(
+        execute_allocation(cleared$allocation, env, latency_noise_cv = 0), env,
+        cleared$clearing$prices, lambda_l_default = lambda_l_default,
+        salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05)
+      list(prices = cleared$clearing$prices,
+           admitted = as.character(cleared$allocation$task_id),
+           welfare = welfare, cleared = cleared)
+    })
+
+    admitted <- vapply(from, function(x) length(x$admitted), numeric(1))
+    welfare  <- vapply(from, function(x) x$welfare, numeric(1))
+    rows[[t]] <- tibble(
+      graph_type = graph_type, load_level = load_level, N = as.integer(N),
+      seed = as.integer(seed), iters = as.integer(iters), round = t,
+      n_offered = nrow(tasks), n_starts = length(from),
+      price_spread = node_price_spread(lapply(from, `[[`, "prices"), reserve),
+      sets_agree   = node_sets_agree(lapply(from, `[[`, "admitted")),
+      admitted_min = min(admitted), admitted_max = max(admitted),
+      admitted_carried = unname(admitted[["carried"]]),
+      welfare_min  = min(welfare), welfare_max = max(welfare),
+      welfare_carried = unname(welfare[["carried"]]),
+      terminal_prices = list(bind_rows(lapply(names(from), function(nm)
+        mutate(from[[nm]]$prices, start = nm)))))
+
+    # The round advances on the clearing the pipeline would have carried.
+    cleared   <- from$carried$cleared
+    ms        <- append_price_history(cleared$market_state,
+                                      cleared$market_state$prices)
+    results_t <- execute_allocation(cleared$allocation, env)
+    agents    <- update_trust(agents, results_t)
+    prev_util <- compute_utilisation_per_node(env, cleared$allocation)
+    ms <- market_update_from_results(
+      ms, if (nrow(tasks) == 0L) 0 else mean(bid$util_hat), results_t,
+      lr = success_lr)
+  }
+  bind_rows(rows)
+}
+
+#' The grid the determinacy block branches over.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_determinacy_grid <- function(n_seeds) {
+  tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     seed = seq_len(n_seeds))
+}
+
+#' How often the start decided the price, per instance.
+#'
+#' @param rows Per-round rows from node_determinacy_run().
+#' @return One row per instance.
+node_determinacy_summary <- function(rows) {
+  rows %>%
+    group_by(graph_type) %>%
+    summarise(n_rounds        = dplyr::n(),
+              determinate     = mean(price_spread <= 1e-9),
+              sets_agree      = mean(sets_agree),
+              price_spread    = mean(price_spread),
+              welfare_range   = mean(welfare_max - welfare_min),
+              .groups = "drop")
+}
+
+
+# ===========================================================================
 # The onset law: the first node crossing
 # ===========================================================================
 

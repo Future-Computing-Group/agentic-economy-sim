@@ -924,6 +924,26 @@ list(
   tar_target(node_exp6_convergence_summary,
              node_convergence_summary(bind_rows(node_exp6_convergence))),
 
+  # -- is the price a property of the round or of where the walk began ------
+  tar_target(node_exp6_determinacy_grid, node_determinacy_grid(n_seeds)),
+  tar_target(
+    node_exp6_determinacy,
+    node_determinacy_run(
+      graph_type       = node_exp6_determinacy_grid$graph_type,
+      load_level       = "high",
+      N                = node_agent_counts[[node_exp6_determinacy_grid$graph_type]],
+      seed             = node_exp6_determinacy_grid$seed,
+      n_rounds         = 20L,
+      iters            = 1000L,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_determinacy_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_determinacy_summary,
+             node_determinacy_summary(bind_rows(node_exp6_determinacy))),
+
   tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
   tar_target(
     node_exp6_sensitivity,
