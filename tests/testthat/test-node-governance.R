@@ -88,6 +88,38 @@ test_that("the three determinants cap the leaves each names and no others", {
   expect_equal(unname(tr[c("l1", "l2", "l4")]), unname(Ctok[c("l1", "l2", "l4")]))
 })
 
+test_that("a provider pool smaller than the leaf count still covers every leaf", {
+  # The sweep's smallest population puts fewer agents in the provider role than
+  # the instance has leaves, and a leaf with no provider has no reputation for
+  # the trust determinant to read. Providers are agents, so the assignment
+  # wraps round-robin: a provider owns several leaves and the determinant
+  # applies to all of them. No leaf is dropped and no agent is invented.
+  agents <- tibble(agent_id = 1:5,
+                   role = c("provider", "consumer", "provider",
+                            "consumer", "consumer"),
+                   trust = 0.8)
+  leaves <- c("l1", "l2", "l3", "l4")
+  prov   <- leaf_providers(agents, leaves)
+
+  expect_equal(names(prov), leaves)                       # every leaf owned
+  expect_true(all(agents$role[match(prov, agents$agent_id)] == "provider"))
+  expect_setequal(unique(unname(prov)), c(1L, 3L))        # every provider used
+  expect_equal(leaf_providers(agents, leaves), prov)      # deterministic
+
+  # The trust determinant then closes BOTH leaves a distrusted provider owns.
+  env  <- gov_env("tree")
+  Ctok <- node_token_capacity(env)[rownames(env$anc)]
+  agents$trust[agents$agent_id == 1L] <- 0.5
+  tr <- node_policy_caps("trust", env, agents, prov)
+  expect_equal(unname(tr[c("l1", "l3")]), c(0, 0))
+  expect_equal(unname(tr[c("l2", "l4")]), unname(Ctok[c("l2", "l4")]))
+
+  # ... and the cell that errored builds and runs a round end to end.
+  out <- node_run_single("tree", "medium", N = 10L, seed = 7L, n_rounds = 1L,
+                         exact_reference = FALSE)
+  expect_equal(nrow(out), 1L)
+})
+
 test_that("a provider's reputation moves with its own leaf's deadline misses", {
   # The deployed update is keyed by the task's OWNING agent, so a provider's
   # trust never moves under it and the governance instrument it feeds gates

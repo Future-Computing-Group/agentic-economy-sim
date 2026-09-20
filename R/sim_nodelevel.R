@@ -433,19 +433,26 @@ apply_leaf_caps <- function(env, u) {
   env
 }
 
-#' Assign one provider agent to each leaf, deterministically under the seed.
+#' Assign a provider agent to each leaf, deterministically under the seed.
 #'
 #' init_agents already gives four agents in ten the provider role; what is
 #' missing is which service a provider is behind, without which a
 #' provider-side reputation has nothing to attach to.
+#'
+#' The pool is a draw, not a quota, so at the smallest populations of the
+#' sweep it holds fewer providers than the instance has leaves. Leaves are
+#' assigned round-robin over the pool for that reason: a provider then stands
+#' behind several services, its reputation attaches to all of them at once,
+#' and no leaf is left without an owner. Where the pool is at least as large
+#' as the leaf set the wrap never comes round and the map is one-to-one.
 #'
 #' @param agents Agent tibble from init_agents().
 #' @param leaves Character vector of leaves.
 #' @return Named integer vector, one agent id per leaf.
 leaf_providers <- function(agents, leaves) {
   ids <- agents$agent_id[agents$role == "provider"]
-  stopifnot("fewer provider agents than leaves" = length(ids) >= length(leaves))
-  setNames(ids[seq_along(leaves)], leaves)
+  stopifnot("no provider agents to stand behind the leaves" = length(ids) > 0L)
+  setNames(ids[(seq_along(leaves) - 1L) %% length(ids) + 1L], leaves)
 }
 
 #' Move a provider's reputation with its own leaf's deadline misses.
