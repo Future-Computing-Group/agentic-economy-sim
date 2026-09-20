@@ -55,6 +55,7 @@ test_that("export_env_json records the simulator's own commit", {
   # In a linked worktree .git is a pointer FILE, HEAD lives in the worktree's
   # own git dir, and the branch ref lives in the common dir it points at.
   gitdir <- file.path(here::here(), ".git")
+  skip_if_not(file.exists(gitdir), "an exported tree carries no .git to read the commit from")
   if (!dir.exists(gitdir)) {
     gitdir <- sub("^gitdir: ", "", readLines(gitdir, warn = FALSE)[1])
   }

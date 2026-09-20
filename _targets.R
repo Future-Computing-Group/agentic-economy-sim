@@ -635,6 +635,18 @@ list(
                             c("graph_type", "load_level", "N"))),
   tar_target(node_stats_exp2, stat_exp2(bind_rows(node_exp2_results_raw),
                                         rho_fn = node_rho_bottleneck)),
+  # The onset law read against the sweep: the expected number of price-moving
+  # rounds per seed at each grid population, from the first node crossing.
+  tar_target(
+    node_exp2_onset_law,
+    purrr::pmap_dfr(
+      dplyr::distinct(node_exp2_param_grid, graph_type, load_level),
+      function(graph_type, load_level)
+        node_onset_law(node_instance(graph_type), "uniform", load_level,
+                       sort(unique(node_exp2_param_grid$N)), n_rounds) %>%
+          dplyr::mutate(graph_type = graph_type, load_level = load_level,
+                        .before = 1))
+  ),
 
   # -- governance: the dose-and-determinant instrument -----------------------
   tar_target(
@@ -644,6 +656,12 @@ list(
                      "residency", "residency_sliced"),
       graph_type = graph_types,
       load_level = c("medium", "high"),
+      # Two mixes, two questions. The exactness question needs the crossing to
+      # bind, which it does only at uniform shares (under the skewed mix the
+      # crossing instance binds on e1 alone). The coupled residency pair needs
+      # asymmetric shares for the slice to strand anything: at uniform shares
+      # both half budgets are exhausted. No contrast crosses mixes.
+      leaf_mix   = c("uniform", "skewed"),
       seed       = seq_len(n_seeds))
   ),
   tar_target(
@@ -654,9 +672,7 @@ list(
       seed             = node_exp3_param_grid$seed,
       N                = node_agent_counts[[node_exp3_param_grid$graph_type]],
       policy           = node_exp3_param_grid$policy,
-      # The coupled pair has to be asymmetric for the slice to strand
-      # anything: at uniform shares both half budgets are exhausted.
-      leaf_mix         = "skewed",
+      leaf_mix         = node_exp3_param_grid$leaf_mix,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
@@ -666,9 +682,10 @@ list(
   ),
   tar_target(node_exp3_summary_table,
              node_aggregate(node_exp3_results_raw,
-                            c("policy", "graph_type", "load_level"))),
+                            c("policy", "graph_type", "load_level", "leaf_mix"))),
   tar_target(node_stats_exp3,
-             node_stat_factor(bind_rows(node_exp3_results_raw), "policy")),
+             node_stat_factor(bind_rows(node_exp3_results_raw), "policy",
+                              cell_vars = c("graph_type", "load_level", "leaf_mix"))),
 
   # -- the cap-target factor: the exactness-repair instrument ----------------
   tar_target(
@@ -735,6 +752,12 @@ list(
     node_exp10_param_grid,
     tidyr::expand_grid(interface  = c("off", "inner", "maxflow"),
                        graph_type = graph_types,
+                       # The skewed mix is where an over-stated scalar
+                       # over-commits on the exposed node (at uniform shares
+                       # that over-commitment is exactly zero, a knife-edge);
+                       # the uniform mix is the matched-load cell every other
+                       # experiment reads at. No contrast crosses mixes.
+                       leaf_mix   = c("uniform", "skewed"),
                        seed       = seq_len(n_seeds))
   ),
   tar_target(
@@ -745,10 +768,7 @@ list(
       seed             = node_exp10_param_grid$seed,
       N                = node_agent_counts[[node_exp10_param_grid$graph_type]],
       interface        = node_exp10_param_grid$interface,
-      # At uniform shares the over-commitment on the exposed node is exactly
-      # zero, an arithmetic knife-edge, and the arm would measure a null that
-      # refutes no prediction.
-      leaf_mix         = "skewed",
+      leaf_mix         = node_exp10_param_grid$leaf_mix,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
@@ -758,9 +778,10 @@ list(
   ),
   tar_target(node_exp10_summary_table,
              node_aggregate(node_exp10_results_raw,
-                            c("interface", "graph_type"))),
+                            c("interface", "graph_type", "leaf_mix"))),
   tar_target(node_stats_exp10,
-             node_stat_factor(bind_rows(node_exp10_results_raw), "interface")),
+             node_stat_factor(bind_rows(node_exp10_results_raw), "interface",
+                              cell_vars = c("graph_type", "leaf_mix"))),
 
   # -- architecture x governance ---------------------------------------------
   tar_target(
@@ -792,7 +813,9 @@ list(
                             c("architecture", "policy", "graph_type",
                               "load_level"))),
   tar_target(node_stats_exp5,
-             node_stat_factor(bind_rows(node_exp5_results_raw), "policy")),
+             node_stat_factor(bind_rows(node_exp5_results_raw), "policy",
+                              cell_vars = c("architecture", "graph_type", "load_level"),
+                              interaction_vars = c("architecture", "policy"))),
 
   # -- the mechanism ablation ------------------------------------------------
   tar_target(node_exp6_param_grid, exp6_mechanism_grid(n_seeds)),
