@@ -848,6 +848,56 @@ list(
   tar_target(node_exp6_frontier,
              node_frontier_table(bind_rows(node_exp6_results_raw))),
 
+  # -- one tuned knob per mechanism, chosen and reported on disjoint seeds ---
+  # The knob is chosen on the tuning seeds and every reported number comes
+  # from seeds no cell of the mechanism block has run, so a maximum over
+  # levels cannot travel into the comparison it is part of.
+  tar_target(node_exp6_tuning_grid,
+             node_tuning_grid(node_tuning_split()$tuning)),
+  tar_target(
+    node_exp6_tuning_raw,
+    node_run_single(
+      graph_type       = node_exp6_tuning_grid$graph_type,
+      load_level       = node_exp6_tuning_grid$load_level,
+      seed             = node_exp6_tuning_grid$seed,
+      N                = node_agent_counts[[node_exp6_tuning_grid$graph_type]],
+      mechanism        = node_exp6_tuning_grid$mechanism,
+      p_post_k         = node_exp6_tuning_grid$p_post_k,
+      reserve_markup   = node_exp6_tuning_grid$reserve_markup,
+      architecture     = ifelse(node_exp6_tuning_grid$architecture == "hybrid",
+                                "hybrid_noema", "naive"),
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_tuning_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_eval_grid,
+             node_eval_grid(bind_rows(node_exp6_tuning_raw),
+                            node_tuning_split()$evaluation)),
+  tar_target(
+    node_exp6_eval_raw,
+    node_run_single(
+      graph_type       = node_exp6_eval_grid$graph_type,
+      load_level       = node_exp6_eval_grid$load_level,
+      seed             = node_exp6_eval_grid$seed,
+      N                = node_agent_counts[[node_exp6_eval_grid$graph_type]],
+      mechanism        = node_exp6_eval_grid$mechanism,
+      p_post_k         = node_exp6_eval_grid$p_post_k,
+      reserve_markup   = node_exp6_eval_grid$reserve_markup,
+      architecture     = ifelse(node_exp6_eval_grid$architecture == "hybrid",
+                                "hybrid_noema", "naive"),
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_eval_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_tuned,
+             node_tuned_table(bind_rows(node_exp6_eval_raw))),
+
   # -- the incentive arms, under the certificate -----------------------------
   # The certified arms run at the evaluation populations, where the capacity
   # vector already binds; the uncertified converse runs at the population the

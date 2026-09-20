@@ -881,6 +881,9 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param deadlines        Integer vector of possible deadlines (ms).
 #' @param lambda_l_default Per-ms value-decay rate.
 #' @param leaf_mix         "uniform" or "skewed".
+#' @param reserve_markup   Multiplier on the per-node reserve the market arms
+#'                         clamp their prices to: the market's tuned knob, the
+#'                         counterpart of the posted price's markup.
 #' @param exact_reference  Whether to compute the greedy-versus-exact
 #'                         instrument. Off on the cells whose primary
 #'                         instrument is something else.
@@ -911,6 +914,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
                             exact_reference = TRUE,
+                            reserve_markup = 1,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3) {
   graph_type <- match.arg(graph_type)
@@ -1034,7 +1038,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       clear_multitier_market(
         tasks, e, b$util_hat, b$base_latency, state,
         alpha = a, p = p, lambda_l_default = lambda_l_default,
-        salvage = salvage, iters = iters, eta = eta, beta = beta)
+        salvage = salvage, iters = iters, eta = eta, beta = beta,
+        reserve_markup = reserve_markup)
     }
 
     if (!mechanism %in% c("market", "market_cc")) {
@@ -1232,6 +1237,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     interface                  = interface,
     mechanism                  = mechanism,
     p_post_k                   = as.numeric(p_post_k),
+    reserve_markup             = as.numeric(reserve_markup),
     policy                     = policy,
     cap_target                 = cap_target,
     median_latency             = mean(medL, na.rm = TRUE),
@@ -1570,6 +1576,105 @@ node_frontier_table <- function(raw_df,
       welfare_vs_posted_at_matched_latency_lo = .ratio_interval(r_latency)$lo,
       welfare_vs_posted_at_matched_latency_hi = .ratio_interval(r_latency)$hi,
       .groups = "drop")
+}
+
+
+# ===========================================================================
+# One tuned knob per mechanism, on seeds the tuning never sees
+# ===========================================================================
+
+#' The reserve markups the market arms are tuned over.
+#'
+#' The market's counterpart of the posted price's markup: both are one number
+#' that rations, so a comparison at each mechanism's own best setting is a
+#' comparison of mechanisms rather than of who was given a dial.
+#'
+#' @return Numeric vector of multipliers on the per-node reserve.
+node_reserve_markups <- function() c(1, 1.25, 1.5, 2)
+
+#' The seeds a knob is chosen on and the seeds it is reported on.
+#'
+#' Disjoint by construction, and the reported ones sit above every seed the
+#' mechanism block runs, so no number in the tuned table was ever seen while
+#' the knob was being chosen.
+#'
+#' @return A list of `tuning` and `evaluation` seed vectors.
+node_tuning_split <- function() list(tuning = 1:5, evaluation = 11:20)
+
+#' The grid the knobs are chosen on.
+#'
+#' @param seeds Tuning seeds.
+#' @return A tibble with one row per branch.
+node_tuning_grid <- function(seeds) {
+  arms <- bind_rows(
+    tidyr::expand_grid(mechanism = "posted_price",
+                       p_post_k = node_posted_levels(), reserve_markup = 1),
+    tidyr::expand_grid(mechanism = c("market", "market_cc"), p_post_k = 1,
+                       reserve_markup = node_reserve_markups()))
+  tidyr::expand_grid(
+    arms,
+    graph_type   = c("tree", "sp", "entangled"),
+    load_level   = c("medium", "high"),
+    architecture = c("naive", "hybrid"),
+    seed         = seeds)
+}
+
+#' The grid the tuned mechanisms are reported on.
+#'
+#' Each tuned mechanism at the knob with the highest mean welfare on the
+#' tuning seeds, plus the arms that have no knob at their only setting, run on
+#' the held-out seeds.
+#'
+#' @param tuning_raw Per-seed results of the tuning grid.
+#' @param seeds      Evaluation seeds.
+#' @param cell_vars  The variables a knob is chosen inside.
+#' @param fixed      Mechanisms with nothing to tune.
+#' @return A tibble with one row per branch.
+node_eval_grid <- function(tuning_raw, seeds,
+                           cell_vars = c("graph_type", "load_level",
+                                         "architecture"),
+                           fixed = c("greedy_ev", "k8s")) {
+  knobs <- tuning_raw %>%
+    group_by(across(all_of(c(cell_vars, "mechanism", "p_post_k",
+                             "reserve_markup")))) %>%
+    summarise(tuning_welfare = mean(welfare, na.rm = TRUE), .groups = "drop") %>%
+    group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
+    slice_max(tuning_welfare, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    select(-tuning_welfare)
+  rest <- tidyr::expand_grid(distinct(tuning_raw, across(all_of(cell_vars))),
+                             mechanism = fixed, p_post_k = 1,
+                             reserve_markup = 1)
+  tidyr::expand_grid(bind_rows(knobs, rest), seed = seeds)
+}
+
+#' The one value a column takes inside a cell.
+#'
+#' @param x A column that must be constant.
+#' @return Its value.
+.one_of <- function(x) {
+  stopifnot("a tuned cell ran more than one knob" = length(unique(x)) == 1L)
+  x[[1]]
+}
+
+#' What each mechanism reaches at its tuned knob, on the held-out seeds.
+#'
+#' @param eval_raw  Per-seed results of the evaluation grid.
+#' @param cell_vars The variables a knob was chosen inside.
+#' @return One row per cell and mechanism.
+node_tuned_table <- function(eval_raw,
+                             cell_vars = c("graph_type", "load_level",
+                                           "architecture")) {
+  eval_raw %>%
+    group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
+    summarise(p_post_k             = .one_of(p_post_k),
+              reserve_markup       = .one_of(reserve_markup),
+              n_eval_seeds         = dplyr::n_distinct(seed),
+              welfare              = mean(welfare, na.rm = TRUE),
+              tokens_admitted      = mean(tokens_admitted, na.rm = TRUE),
+              median_latency       = mean(median_latency, na.rm = TRUE),
+              welfare_over_optimum = mean(welfare_over_optimum, na.rm = TRUE),
+              .groups = "drop")
 }
 
 

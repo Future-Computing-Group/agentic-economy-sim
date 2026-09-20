@@ -366,6 +366,10 @@ pack_tasks_greedy <- function(tasks_all, surplus_vec, env, max_tasks = Inf) {
 #' @param price_cap       Maximum price (default: 1000).
 #' @param beta            EMA weight on the entry prices when posting the
 #'                        cleared prices; 0, the default, posts them raw.
+#' @param reserve_markup  Multiplier on the environment's per-node reserve, so
+#'                        the floor the tatonnement clamps to is a knob the way
+#'                        the posted price's markup is. At 1, the default, the
+#'                        floor is the reserve itself and nothing moves.
 #' @return A list with: allocation, surplus, expected_value, clearing, market_state.
 clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
                                    market_state,
@@ -373,7 +377,7 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
                                    lambda_l_default = 0.005, salvage = 0.0,
                                    iters = 15L, eta = price_eta,
                                    price_floor = 0.0, price_cap = 1000.0,
-                                   beta = 0) {
+                                   beta = 0, reserve_markup = 1) {
   if (is.null(market_state$prices)) {
     market_state$prices <- init_tier_prices(env)
   }
@@ -400,7 +404,7 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
   }
   # Per-tier reserve / marginal-cost price anchor (env$reserve_price, default 0
   # for legacy envs). The effective floor is max(price_floor, reserve).
-  reserve <- env$reserve_price %||% 0
+  reserve <- (env$reserve_price %||% 0) * reserve_markup
 
   # Compute expected value for all tasks
   ev <- task_expected_value(
