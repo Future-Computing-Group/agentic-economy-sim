@@ -710,8 +710,12 @@ contract_cluster <- function(spec, cluster, advertise = c("inner", "maxflow"),
   L_J  <- rownames(anc)[rowSums(anc[, cluster, drop = FALSE]) > 0]
 
   scalar <- scalar %||% switch(advertise,
+    # Every exported token loads every cluster node on its ancestor path, so
+    # the safe scalar is the least capacity among the nodes that load it, not
+    # the sum of parallel capacities: three parallel nodes of fifty carry
+    # fifty tokens of joint throughput, not one hundred and fifty.
     inner = min(vapply(L_J, function(l)
-      sum(Ctok[cluster[anc[l, cluster] > 0]]), numeric(1))),
+      min(Ctok[cluster[anc[l, cluster] > 0]]), numeric(1))),
     maxflow = {
       sub <- list(
         nodes  = spec$nodes[spec$nodes$node %in% c(cluster, L_J), ],
