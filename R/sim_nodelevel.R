@@ -1865,6 +1865,158 @@ node_sensitivity_grid <- function(seeds = 1:5) {
 
 
 # ===========================================================================
+# Does the price process find a clearing vector, and in how many steps
+# ===========================================================================
+
+#' Is this price vector an equilibrium of the round?
+#'
+#' Two conditions, and the second is the one a residual-excess column cannot
+#' see: every node either clears, or has capacity to spare AND is priced at
+#' its marginal cost. A node with slack whose price sits above that cost has
+#' rationed demand a lower price would have served, which is a walk that
+#' overshot rather than a market that cleared.
+#'
+#' @param demand   Per-node demand of the tasks in surplus at these prices.
+#' @param capacity Per-node capacity.
+#' @param prices   Per-node prices.
+#' @param reserve  The per-node reserve the prices floor at.
+#' @param tol      Numerical tolerance, not a margin.
+#' @return TRUE if every node satisfies one of the two conditions.
+node_market_equilibrium <- function(demand, capacity, prices, reserve,
+                                    tol = 1e-9) {
+  excess <- as.numeric(demand) - as.numeric(capacity)
+  cleared <- abs(excess) <= tol
+  at_cost <- excess < -tol & as.numeric(prices) <= reserve + tol
+  all(cleared | at_cost)
+}
+
+#' Per-node demand of the tasks still in surplus at a round's terminal prices.
+#'
+#' The same quantity the clearing kernel measures its residual on, read off the
+#' surplus vector the kernel returns.
+#'
+#' @param tasks   The round's tasks.
+#' @param env     Environment list.
+#' @param surplus Per-task surplus at the terminal prices.
+#' @return Named numeric vector, one entry per node.
+node_round_demand <- function(tasks, env, surplus) {
+  cap <- tier_capacities(env)
+  if (nrow(tasks) == 0L) return(setNames(rep(0, nrow(cap)), cap$tier))
+  A <- task_recipes(tasks, env)
+  colSums(A[which(surplus > 0), , drop = FALSE])
+}
+
+#' The market arm over a run, with the iteration budget exposed.
+#'
+#' The pipeline's market loop with one thing added and nothing changed: the
+#' tatonnement's iteration budget is an argument, and every round records what
+#' the walk reached. The market state, the utilisation signal and the success
+#' model are carried exactly as the driver carries them, so at the pipeline's
+#' budget this reproduces the driver's own market arm round for round.
+#'
+#' @param graph_type       Arm: "tree", "sp" or "entangled".
+#' @param load_level       Load regime.
+#' @param N                Agent population; the arm's own by default.
+#' @param seed             Random seed.
+#' @param n_rounds         Number of rounds.
+#' @param iters            Tatonnement iterations per round.
+#' @param deadlines        Integer vector of possible deadlines (ms).
+#' @param leaf_mix         "uniform" or "skewed".
+#' @param lambda_l_default Per-ms value-decay rate.
+#' @param alpha            Congestion sensitivity.
+#' @param p                Congestion exponent.
+#' @param salvage          Value retained after a deadline miss.
+#' @param eta              Price step size.
+#' @param success_lr       Learning rate for the success model.
+#' @param save_profile     Keep the demand profile of the rounds that fail the
+#'                         equilibrium check, for the theory pass.
+#' @return One row per round.
+node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
+                                 load_level = "high", N = NULL, seed = 1L,
+                                 n_rounds = 20L, iters = 15L,
+                                 deadlines = c(500L, 750L, 1000L),
+                                 leaf_mix = "uniform",
+                                 lambda_l_default = node_lambda_l(),
+                                 alpha = 50, p = 1.2, salvage = 0.0,
+                                 eta = price_eta, success_lr = 0.3,
+                                 save_profile = FALSE) {
+  graph_type <- match.arg(graph_type)
+  N   <- N %||% node_agents()[[graph_type]]
+  set.seed(seed)
+  env <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
+  agents    <- init_agents(N)
+  ms        <- init_market_state(env)
+  prev_util <- NULL
+  cap  <- tier_capacities(env)
+  capv <- setNames(cap$capacity, cap$tier)
+  reserve <- env$reserve_price %||% 0
+
+  rows <- vector("list", n_rounds)
+  for (t in seq_len(n_rounds)) {
+    tasks   <- node_round_tasks(env, agents, t, seed, deadlines)
+    bid     <- node_bid_inputs(env, tasks, prev_util)
+    cleared <- clear_multitier_market(
+      tasks, env, bid$util_hat, bid$base_latency, ms,
+      alpha = alpha, p = p, lambda_l_default = lambda_l_default,
+      salvage = salvage, iters = iters, eta = eta)
+    ms <- append_price_history(cleared$market_state, cleared$market_state$prices)
+
+    demand <- node_round_demand(tasks, env, cleared$surplus)[names(capv)]
+    prices <- setNames(cleared$clearing$prices$price,
+                       cleared$clearing$prices$tier)[names(capv)]
+    ok <- node_market_equilibrium(demand, capv, prices, reserve)
+
+    results_t <- execute_allocation(cleared$allocation, env)
+    agents    <- update_trust(agents, results_t)
+    prev_util <- compute_utilisation_per_node(env, cleared$allocation)
+    ms <- market_update_from_results(
+      ms, if (nrow(tasks) == 0L) 0 else mean(bid$util_hat), results_t,
+      lr = success_lr)
+
+    rows[[t]] <- tibble(
+      graph_type = graph_type, load_level = load_level, N = as.integer(N),
+      seed = as.integer(seed), iters = as.integer(iters), round = t,
+      n_offered = nrow(tasks), admitted = nrow(cleared$allocation),
+      resid_excess = cleared$clearing$resid_excess,
+      equilibrium_ok = ok,
+      demand_profile = list(
+        if (save_profile && !ok)
+          tibble(tier = names(capv), demand = unname(demand),
+                 capacity = unname(capv), price = unname(prices))
+        else NULL))
+  }
+  bind_rows(rows)
+}
+
+#' The grid the convergence block branches over.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_convergence_grid <- function(n_seeds) {
+  budgets <- c(15L, 50L, 200L, 1000L)
+  tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     seed = seq_len(n_seeds), iters = budgets) %>%
+    # The profiles are kept where non-existence would show: the crossing
+    # instance, at the budget beyond which nothing further will converge.
+    mutate(save_profile = graph_type == "entangled" & iters == max(budgets))
+}
+
+#' The share of rounds that reached an equilibrium, per instance and budget.
+#'
+#' @param rows Per-round rows from node_convergence_run().
+#' @return One row per instance and budget.
+node_convergence_summary <- function(rows) {
+  rows %>%
+    group_by(graph_type, iters) %>%
+    summarise(n_rounds           = dplyr::n(),
+              converged_fraction = mean(equilibrium_ok),
+              resid_excess       = mean(resid_excess, na.rm = TRUE),
+              admitted           = mean(admitted, na.rm = TRUE),
+              .groups = "drop")
+}
+
+
+# ===========================================================================
 # The onset law: the first node crossing
 # ===========================================================================
 

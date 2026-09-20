@@ -900,6 +900,30 @@ list(
   # -- the sensitivity beside the numbers, not after them -------------------
   # One factor at a time from the headline setting, plus the queue term
   # retuned to the load response the emulated testbed measured.
+  # -- does the price process find a clearing vector, and in how many steps -
+  # The residual column says how far a truncated walk got; only complementary
+  # slackness separates a market that cleared from one that overshot. Its own
+  # driver and its own targets: the arms already measured must not move.
+  tar_target(node_exp6_convergence_grid, node_convergence_grid(n_seeds)),
+  tar_target(
+    node_exp6_convergence,
+    node_convergence_run(
+      graph_type       = node_exp6_convergence_grid$graph_type,
+      load_level       = "high",
+      N                = node_agent_counts[[node_exp6_convergence_grid$graph_type]],
+      seed             = node_exp6_convergence_grid$seed,
+      iters            = node_exp6_convergence_grid$iters,
+      save_profile     = node_exp6_convergence_grid$save_profile,
+      n_rounds         = 20L,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_convergence_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_convergence_summary,
+             node_convergence_summary(bind_rows(node_exp6_convergence))),
+
   tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
   tar_target(
     node_exp6_sensitivity,
