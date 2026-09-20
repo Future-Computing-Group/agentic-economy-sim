@@ -334,7 +334,7 @@ list(
   # its deadlines and its value-decay rate. Tracking it as a file target means a
   # regenerated profile invalidates the results it parameterises, rather than
   # leaving them stale until someone runs the unit tests.
-  tar_target(agentic_profile_file, agentic_profile_path(), format = "file"),
+  tar_target(agentic_profile_file, agentic_profile_files()[1], format = "file"),
 
   # ===========================================================================
   # Experiment 7: VCG/DSIC incentive compatibility (strategic-bidding regret)
@@ -896,7 +896,7 @@ list(
   # -- the measured workload on the node substrate ---------------------------
   # Both recordings are tracked as files, so a re-recording invalidates every
   # arm that reads them instead of leaving them stale.
-  tar_target(node_agentic_files, agentic_profile_paths(), format = "file"),
+  tar_target(node_agentic_files, agentic_profile_files(), format = "file"),
   tar_target(node_agentic_specs, list(
     single = agentic_union_spec(node_agentic_files[1]),
     union  = agentic_union_spec(node_agentic_files))),

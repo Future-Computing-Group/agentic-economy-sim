@@ -215,10 +215,26 @@ agentic_stages <- function(path = agentic_profile_path()) {
          mean_latency_ms = vapply(st, function(x) x$mean_latency_ms, numeric(1)))
 }
 
+#' The measured profile files, relative to the project root.
+#'
+#' This is the form the pipeline tracks as `format = "file"` targets, so a
+#' regenerated profile invalidates the results it parameterises and a store
+#' built on one machine stays current on another; an absolute path would name
+#' the host that wrote it. Order: the single pattern first, then the second
+#' pattern the union is built from.
+#'
+#' @return Character vector of two project-relative paths.
+agentic_profile_files <- function() {
+  file.path("agentic", c("agentic_profile.json", "agentic_profile_b.json"))
+}
+
 #' Path to the measured agentic workload profile.
 #'
-#' The pipeline tracks this file as a `format = "file"` target, so a regenerated
-#' profile invalidates the results it parameterises.
+#' Absolute, for readers that run outside the project root (the test suite).
+#' The tracked form is agentic_profile_files(); the test suite pins the two to
+#' the same files. The bodies below are left as they were because every
+#' environment constructor reaches them through the agentic demand weights, so
+#' a change here re-derives the whole store.
 #'
 #' @return Absolute path to agentic/agentic_profile.json.
 agentic_profile_path <- function() {
