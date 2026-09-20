@@ -728,6 +728,38 @@ node_bid_inputs <- function(env, tasks, prev_util) {
        base_latency = unname(base_latency_per_leaf(env)[lab]))
 }
 
+#' The execution model's own queue delay on each leaf's path.
+#'
+#' The bid-time congestion signal the baseline market reads is a capped power
+#' law of a path-MEAN utilisation, which saturates far below what the queue at
+#' capacity costs: a price discovered against it cannot carry the congestion
+#' the admitted set creates. This is the execution model's queue term instead,
+#' at the same constants, summed along the leaf's own path at the previous
+#' round's per-node utilisation, and uncapped -- inheriting the execution
+#' model's utilisation clamp and its per-node ceiling would restore exactly the
+#' blindness the arm exists to remove.
+#'
+#' The signal is the PREVIOUS round's, so the arm is a cobweb: at a full round
+#' the estimate runs into the thousands of milliseconds and prices the next
+#' round out entirely, which empties the nodes and prices the one after that
+#' at the zero-queue path. The measured arm two-cycles rather than settling.
+#' That is the arm the design asks for -- damping it would be a second change
+#' on top of the one being measured -- and it is why the arm is reported
+#' beside the market and never instead of it.
+#'
+#' @param env       Environment list from node_env().
+#' @param prev_util Previous round's per-node utilisation, or NULL.
+#' @return Named numeric vector, one latency estimate per leaf.
+node_queue_latency_per_leaf <- function(env, prev_util) {
+  base <- base_latency_per_leaf(env)
+  if (is.null(prev_util)) return(base)
+  anc <- env$anc
+  u   <- prev_util$util[match(colnames(anc), prev_util$tier)]
+  u[is.na(u)] <- 0
+  q   <- env$load_factor * (pmax(u, 0) / (1 - pmax(u, 0) + 1e-3)) * 2
+  base + as.numeric(anc %*% q)
+}
+
 #' The round's per-leaf marginal values, descending.
 #'
 #' @param tasks  The round's tasks, carrying a `recipe` column.
@@ -873,7 +905,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                        "residency", "residency_sliced"),
                             cap_target = NA_character_,
                             mechanism = c("market", "random", "edf",
-                                          "greedy_ev", "posted_price", "k8s"),
+                                          "greedy_ev", "posted_price", "k8s",
+                                          "market_cc"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
@@ -988,13 +1021,23 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
 
     clear_one <- function(tasks, e, state) {
       b <- node_bid_inputs(e, tasks, prev_util)
+      # The congestion-consistent level bids against the execution model's own
+      # queue on the task's path. Its alpha is zero because the congestion is
+      # already inside that latency; the utilisation signal is untouched, so
+      # the success model sees what it always saw.
+      a <- alpha
+      if (mechanism == "market_cc") {
+        b$base_latency <- unname(node_queue_latency_per_leaf(e, prev_util)[
+          as.character(tasks$recipe)])
+        a <- 0
+      }
       clear_multitier_market(
         tasks, e, b$util_hat, b$base_latency, state,
-        alpha = alpha, p = p, lambda_l_default = lambda_l_default,
+        alpha = a, p = p, lambda_l_default = lambda_l_default,
         salvage = salvage, iters = iters, eta = eta, beta = beta)
     }
 
-    if (mechanism != "market") {
+    if (!mechanism %in% c("market", "market_cc")) {
       # The five arms that do not discover a price. Each produces a score and
       # the shared packing kernel admits by it under the node capacities, so
       # what separates them is the ranking key and, for the posted price, the
@@ -1044,10 +1087,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       strandV[t] <- node_stranded_demand(offered[[coupled_pair[1]]],
                                          offered[[coupled_pair[2]]], 50, 25)
     } else {
-      cleared <- clear_multitier_market(
-        tasks_all, env, bid$util_hat, bid$base_latency, ms,
-        alpha = alpha, p = p, lambda_l_default = lambda_l_default,
-        salvage = salvage, iters = iters, eta = eta, beta = beta)
+      cleared <- clear_one(tasks_all, env, ms)
       allocation   <- cleared$allocation
       ms           <- append_price_history(cleared$market_state,
                                            cleared$market_state$prices)
@@ -1425,7 +1465,8 @@ node_posted_levels <- function() c(1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4)
 node_exp6_mechanism_grid <- function(n_seeds) {
   arms <- bind_rows(
     tidyr::expand_grid(
-      mechanism = c("random", "edf", "greedy_ev", "market", "k8s"),
+      mechanism = c("random", "edf", "greedy_ev", "market", "market_cc",
+                    "k8s"),
       p_post_k  = 1),
     tidyr::expand_grid(mechanism = "posted_price",
                        p_post_k  = node_posted_levels()))
