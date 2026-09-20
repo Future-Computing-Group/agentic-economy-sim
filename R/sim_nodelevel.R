@@ -959,6 +959,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   priceCvV  <- tokensV <- bindV <- numeric(n_rounds)
   ratioV    <- shapeV <- strandV <- rep(NA_real_, n_rounds)
   ceilV     <- optV <- optMV <- numeric(n_rounds)
+  trueV     <- rep(NA_real_, n_rounds)
   overV     <- numeric(n_rounds)
   armV      <- rep(NA_real_, n_rounds)
   certV     <- rep(NA, n_rounds)
@@ -1127,6 +1128,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                       salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05))
     optV[t]  <- opt[["value"]]
     optMV[t] <- opt[["m"]]
+    # What this arm admitted, valued on the same zero-queue values as the
+    # ceiling above it. Numerator and denominator are both off the market, so
+    # neither end of the ratio moves with the arm's own congestion state.
+    if (ceilV[t] > 0) {
+      trueV[t] <- sum(v_true[match(allocation$task_id, tasks_all$task_id)]) /
+        ceilV[t]
+    }
 
     # The structural instrument, computed OFF the market on the round's full
     # instance: admission passes through the tatonnement's positive-surplus
@@ -1214,6 +1222,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                  else mean(below, na.rm = TRUE),
     greedy_exact_worst         = if (all(is.na(ratioV))) NA_real_
                                  else min(ratioV, na.rm = TRUE),
+    # The arm's admitted set on true zero-queue values, against the exact
+    # leaf-block optimum of those same values: one reference for every arm.
+    alloc_ratio_true           = mean(trueV, na.rm = TRUE),
+    # Retired, kept for one release: the arm's set on its own BID-TIME values
+    # against the optimum of those same values, so both ends move with the
+    # arm's congestion estimate and no arm can rank above value-greedy on a
+    # laminar instance.
     arm_exact_ratio            = mean(armV, na.rm = TRUE),
     flow_bound_ratio           = lb_full / flow_full,
     flow_bound_token_gap       = flow_full - lb_full,
@@ -1339,7 +1354,7 @@ node_metrics <- function() {
   c("median_latency", "drop_rate", "utilisation", "welfare", "arm_exact_ratio",
     "mean_price_volatility", "mean_price_volatility_tail",
     "greedy_exact_ratio", "tokens_admitted", "served_among_admitted",
-    "welfare_over_optimum")
+    "welfare_over_optimum", "alloc_ratio_true")
 }
 
 #' Per-cell summary of one factor over the node responses.
@@ -1472,12 +1487,12 @@ node_exp6_mechanism_grid <- function(n_seeds) {
 node_frontier_table <- function(raw_df,
                                 cell_vars = c("graph_type", "load_level",
                                               "architecture")) {
-  cols <- c("tokens_admitted", "median_latency", "welfare", "arm_exact_ratio")
+  cols <- c("tokens_admitted", "median_latency", "welfare", "alloc_ratio_true")
   stopifnot(all(c(cell_vars, "mechanism", "p_post_k", "seed", cols) %in%
                   names(raw_df)))
   df <- raw_df %>%
     select(all_of(c(cell_vars, "mechanism", "p_post_k", "seed", cols))) %>%
-    rename(alloc_ratio = "arm_exact_ratio")
+    rename(alloc_ratio = "alloc_ratio_true")
 
   curves <- df %>%
     filter(mechanism == "posted_price") %>%

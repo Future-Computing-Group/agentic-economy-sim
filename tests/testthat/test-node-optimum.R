@@ -133,3 +133,42 @@ test_that("an arm that admits nothing sits at zero against both references", {
   expect_equal(r$welfare_over_optimum, 0)
   expect_gt(r$optimum_ex_post, 0)
 })
+
+
+# ---- the allocative ratio the arm cannot move ------------------------------
+
+test_that("the allocative ratio is read against a reference no arm can move", {
+  one <- function(mechanism, k = 1) {
+    node_run_single("tree", "high", N = 90L, seed = 1L, n_rounds = 6L,
+                    mechanism = mechanism, p_post_k = k,
+                    lambda_l_default = node_lambda_l())
+  }
+  rows <- dplyr::bind_rows(one("greedy_ev"), one("market"),
+                           one("posted_price", 2))
+  expect_true(all(c("alloc_ratio_true", "arm_exact_ratio") %in% names(rows)))
+
+  # The point of the column: the round's tasks and the true instance decide
+  # the reference, so all three arms are divided by the same number.
+  expect_equal(length(unique(rows$ceiling_zero_queue)), 1L)
+  expect_equal(length(unique(rows$optimum_ex_post)), 1L)
+
+  # Admitted sets are feasible on the region the reference is taken over, so
+  # no arm can score above it; value-greedy takes the most of it, the market
+  # rations below it, and the posted price rations further.
+  expect_true(all(rows$alloc_ratio_true <= 1))
+  expect_gt(rows$alloc_ratio_true[1], rows$alloc_ratio_true[2])
+  expect_gt(rows$alloc_ratio_true[2], rows$alloc_ratio_true[3])
+
+  # The retired column is kept for one release and is not the same statistic:
+  # it scores the arm on its own bid-time values against the optimum of those
+  # same values, so both ends move with the arm's congestion state.
+  expect_false(isTRUE(all.equal(rows$alloc_ratio_true, rows$arm_exact_ratio)))
+})
+
+test_that("the frontier reads the arm-independent ratio", {
+  raw <- node_run_single("tree", "high", N = 90L, seed = 1L, n_rounds = 4L,
+                         mechanism = "posted_price", p_post_k = 2,
+                         lambda_l_default = node_lambda_l())
+  f <- node_frontier_table(dplyr::mutate(raw, architecture = "naive"))
+  expect_equal(f$alloc_ratio, raw$alloc_ratio_true)
+})

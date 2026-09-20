@@ -44,11 +44,11 @@ test_that("the node mechanism grid refines the posted levels and leaves the per-
       tokens_admitted = c(100, 80, 40)[match(p_post_k, c(1, 2, 4))],
       median_latency  = c(400, 200, 100)[match(p_post_k, c(1, 2, 4))],
       welfare         = c(10, 30, 20)[match(p_post_k, c(1, 2, 4))] + seed,
-      arm_exact_ratio = 0.9)
+      alloc_ratio_true = 0.9)
   market <- tibble::tibble(
     seed = 1:2, p_post_k = 1, mechanism = "market",
     tokens_admitted = 90, median_latency = 300,
-    welfare = c(25, 27), arm_exact_ratio = 0.95)
+    welfare = c(25, 27), alloc_ratio_true = 0.95)
   dplyr::bind_rows(posted, market) %>%
     dplyr::mutate(graph_type = "tree", load_level = "high",
                   architecture = "naive")
