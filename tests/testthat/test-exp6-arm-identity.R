@@ -20,5 +20,9 @@ test_that("adding mechanism levels leaves the existing Exp.6 arms bit-identical"
   )
   # Compared on the columns the fixture recorded: a column added later is a
   # further statistic of the same runs and cannot move the recorded ones.
-  expect_identical(actual[names(expected)], expected)
+  # Bit identity holds on the recording platform; on another CPU the last
+  # binary digit of a floating-point sum can differ (relative 1e-16 between
+  # Apple silicon and x86), so the guard compares at 1e-12, twelve orders
+  # below the smallest change a packing or clearing edit produces.
+  expect_equal(actual[names(expected)], expected, tolerance = 1e-12)
 })

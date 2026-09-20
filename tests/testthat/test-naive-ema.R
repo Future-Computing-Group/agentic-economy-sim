@@ -20,7 +20,11 @@ test_that("the existing exp4 arms are unchanged by the smoothing argument", {
   actual   <- bind_rows(lapply(expected$architecture, function(a) {
     exp4_run_single(a, "sp", "high", N = 55L, seed = 1L, n_rounds = 20L)
   }))
-  expect_identical(actual[names(expected)], expected)
+  # Bit identity holds on the recording platform; on another CPU the last
+  # binary digit of a floating-point sum can differ (relative 1e-16 between
+  # Apple silicon and x86), so the guard compares at 1e-12, twelve orders
+  # below the smallest change a packing or clearing edit produces.
+  expect_equal(actual[names(expected)], expected, tolerance = 1e-12)
 })
 
 
