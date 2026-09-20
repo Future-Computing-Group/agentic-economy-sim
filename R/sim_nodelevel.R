@@ -2185,6 +2185,146 @@ node_determinacy_summary <- function(rows) {
 
 
 # ===========================================================================
+# What a small change in one report does to the whole allocation
+# ===========================================================================
+
+#' How many tasks changed side between two admitted sets.
+#'
+#' @param a,b Character vectors of task identifiers.
+#' @return Size of the symmetric difference.
+node_hamming <- function(a, b) {
+  length(setdiff(a, b)) + length(setdiff(b, a))
+}
+
+#' One round re-cleared with one admitted task's value moved.
+#'
+#' On a matroidal region the greedy allocation is stable in the reports: a
+#' small move in one element's value either leaves the admitted set alone or
+#' exchanges that element against one partner. Where the region is not a
+#' matroid there is no such bound. The perturbation is applied to the task's
+#' value and the round is re-cleared from the same carried state, so what the
+#' response measures is the allocation rule and not a different round.
+#'
+#' @param graph_type       Arm: "tree", "sp" or "entangled".
+#' @param load_level       Load regime.
+#' @param N                Agent population; the arm's own by default.
+#' @param seed             Random seed.
+#' @param n_rounds         Number of rounds.
+#' @param n_tasks          Admitted tasks perturbed per round.
+#' @param steps            Relative moves applied to a task's value.
+#' @param iters            Tatonnement iterations per clearing.
+#' @param deadlines        Integer vector of possible deadlines (ms).
+#' @param leaf_mix         "uniform" or "skewed".
+#' @param lambda_l_default Per-ms value-decay rate.
+#' @param alpha            Congestion sensitivity.
+#' @param p                Congestion exponent.
+#' @param salvage          Value retained after a deadline miss.
+#' @param eta              Price step size.
+#' @param success_lr       Learning rate for the success model.
+#' @return One row per round, perturbed task and step.
+node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
+                                      load_level = "high", N = NULL, seed = 1L,
+                                      n_rounds = 20L, n_tasks = 10L,
+                                      steps = c(-0.05, -0.01, 0.01, 0.05),
+                                      iters = 15L,
+                                      deadlines = c(500L, 750L, 1000L),
+                                      leaf_mix = "uniform",
+                                      lambda_l_default = node_lambda_l(),
+                                      alpha = 50, p = 1.2, salvage = 0.0,
+                                      eta = price_eta, success_lr = 0.3) {
+  graph_type <- match.arg(graph_type)
+  N   <- N %||% node_agents()[[graph_type]]
+  set.seed(seed)
+  env <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
+  agents    <- init_agents(N)
+  ms        <- init_market_state(env)
+  prev_util <- NULL
+
+  rows <- vector("list", n_rounds)
+  for (t in seq_len(n_rounds)) {
+    tasks <- node_round_tasks(env, agents, t, seed, deadlines)
+    bid   <- node_bid_inputs(env, tasks, prev_util)
+    clear_with <- function(tk) clear_multitier_market(
+      tk, env, bid$util_hat, bid$base_latency, ms,
+      alpha = alpha, p = p, lambda_l_default = lambda_l_default,
+      salvage = salvage, iters = iters, eta = eta)
+    welfare_of <- function(cleared) compute_welfare(
+      execute_allocation(cleared$allocation, env, latency_noise_cv = 0), env,
+      cleared$clearing$prices, lambda_l_default = lambda_l_default,
+      salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05)
+
+    base     <- clear_with(tasks)
+    base_set <- as.character(base$allocation$task_id)
+    base_w   <- welfare_of(base)
+
+    # The tasks perturbed are drawn from the round's own admitted set, under
+    # the round's own seed, so a branch is a function of its inputs alone.
+    picked <- if (length(base_set) == 0L) character(0) else {
+      set.seed(seed * 7919L + t)
+      sample(base_set, min(n_tasks, length(base_set)))
+    }
+    rows[[t]] <- bind_rows(lapply(picked, function(id) {
+      bind_rows(lapply(steps, function(step) {
+        moved <- tasks
+        i <- match(id, as.character(moved$task_id))
+        moved$value_base[i] <- moved$value_base[i] * (1 + step)
+        alt <- clear_with(moved)
+        alt_set <- as.character(alt$allocation$task_id)
+        tibble(graph_type = graph_type, load_level = load_level,
+               N = as.integer(N), seed = as.integer(seed), round = t,
+               task_id = id, step = step, n_admitted = length(base_set),
+               hamming = node_hamming(base_set, alt_set),
+               own_changed = (id %in% alt_set) != (id %in% base_set),
+               welfare_delta = welfare_of(alt) - base_w)
+      }))
+    }))
+
+    ms        <- append_price_history(base$market_state,
+                                      base$market_state$prices)
+    results_t <- execute_allocation(base$allocation, env)
+    agents    <- update_trust(agents, results_t)
+    prev_util <- compute_utilisation_per_node(env, base$allocation)
+    ms <- market_update_from_results(
+      ms, if (nrow(tasks) == 0L) 0 else mean(bid$util_hat), results_t,
+      lr = success_lr)
+  }
+  bind_rows(rows)
+}
+
+#' The grid the report-stability block branches over.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_report_stability_grid <- function(n_seeds) {
+  tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     seed = seq_len(n_seeds))
+}
+
+#' How far a one-task move moved the round, per instance and step.
+#'
+#' `beyond_exchange` is the share of perturbations that moved more than the
+#' perturbed task and one exchange partner, which is the bound a matroidal
+#' region gives.
+#'
+#' @param rows Per-perturbation rows from node_report_stability_run().
+#' @return One row per instance and step.
+node_report_stability_summary <- function(rows) {
+  rows %>%
+    group_by(graph_type, step) %>%
+    # The reductions that read the per-perturbation column come before the one
+    # that replaces it: a summary naming its own input would average an
+    # average.
+    summarise(n               = dplyr::n(),
+              hamming_worst   = max(hamming),
+              beyond_exchange = mean(hamming > 2),
+              own_changed     = mean(own_changed),
+              welfare_delta   = mean(abs(welfare_delta)),
+              hamming         = mean(hamming),
+              .groups = "drop")
+}
+
+
+# ===========================================================================
 # The onset law: the first node crossing
 # ===========================================================================
 

@@ -944,6 +944,25 @@ list(
   tar_target(node_exp6_determinacy_summary,
              node_determinacy_summary(bind_rows(node_exp6_determinacy))),
 
+  # -- what a small change in one report does to the whole allocation -------
+  tar_target(node_exp6_report_stability_grid, node_report_stability_grid(n_seeds)),
+  tar_target(
+    node_exp6_report_stability,
+    node_report_stability_run(
+      graph_type       = node_exp6_report_stability_grid$graph_type,
+      load_level       = "high",
+      N                = node_agent_counts[[node_exp6_report_stability_grid$graph_type]],
+      seed             = node_exp6_report_stability_grid$seed,
+      n_rounds         = 20L,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_report_stability_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_report_stability_summary,
+             node_report_stability_summary(bind_rows(node_exp6_report_stability))),
+
   tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
   tar_target(
     node_exp6_sensitivity,
