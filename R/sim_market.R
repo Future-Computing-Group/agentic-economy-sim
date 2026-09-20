@@ -366,6 +366,12 @@ pack_tasks_greedy <- function(tasks_all, surplus_vec, env, max_tasks = Inf) {
 #' @param price_cap       Maximum price (default: 1000).
 #' @param beta            EMA weight on the entry prices when posting the
 #'                        cleared prices; 0, the default, posts them raw.
+#' @param posted_prices   Named numeric vector of node prices the operator
+#'                        posts rather than discovers. Those nodes are held at
+#'                        their posted level on every tatonnement iteration
+#'                        and in the payment; every other node's price is
+#'                        discovered as before. NULL, the default, discovers
+#'                        all of them.
 #' @param reserve_markup  Multiplier on the environment's per-node reserve, so
 #'                        the floor the tatonnement clamps to is a knob the way
 #'                        the posted price's markup is. At 1, the default, the
@@ -377,7 +383,8 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
                                    lambda_l_default = 0.005, salvage = 0.0,
                                    iters = 15L, eta = price_eta,
                                    price_floor = 0.0, price_cap = 1000.0,
-                                   beta = 0, reserve_markup = 1) {
+                                   beta = 0, reserve_markup = 1,
+                                   posted_prices = NULL) {
   if (is.null(market_state$prices)) {
     market_state$prices <- init_tier_prices(env)
   }
@@ -385,7 +392,16 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
     market_state$success_model <- init_success_model()
   }
 
-  prices <- market_state$prices
+  # The mixed pricing rule: the posted nodes enter the round at their posted
+  # level, stay there through every iteration, and are charged at it.
+  hold <- function(df) {
+    if (is.null(posted_prices)) return(df)
+    i  <- match(names(posted_prices), df$tier)
+    ok <- !is.na(i)
+    df$price[i[ok]] <- as.numeric(posted_prices)[ok]
+    df
+  }
+  prices <- hold(market_state$prices)
   cap    <- tier_capacities(env)
   bundle <- task_bundle(env)
   # Per-task recipes, and the two arithmetic shortcuts they retire. The
@@ -433,11 +449,11 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
         step         = eta * (excess / pmax(capacity, 1))
       )
 
-    prices <- x %>%
+    prices <- hold(x %>%
       transmute(
         tier  = tier,
         price = pmin(price_cap, pmax(max(price_floor, reserve), price + step))
-      )
+      ))
   }
 
   # Final allocation: pack tasks by surplus at converged prices
@@ -474,6 +490,7 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
   if (beta > 0) {
     entry <- market_state$prices$price[match(prices$tier, market_state$prices$tier)]
     prices$price <- ema_post(entry, prices$price, beta)
+    prices <- hold(prices)
   }
 
   # Clearing summary. unit_cost is deliberately the MIX-AVERAGE basket

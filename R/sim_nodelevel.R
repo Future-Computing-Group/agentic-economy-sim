@@ -761,6 +761,20 @@ node_queue_latency_per_leaf <- function(env, prev_util, coefficient = 2) {
   base + as.numeric(anc %*% q)
 }
 
+#' The nodes a contraction created, which is what an integrator posts a price
+#' for.
+#'
+#' Computed rather than named: the advertised region carries one node the true
+#' instance does not, and that node is the slice. Empty on an uncontracted
+#' region, which is why the mixed arm runs on the contracted architectures.
+#'
+#' @param env_adv  The advertised environment.
+#' @param env_true The true instance.
+#' @return Character vector of nodes, possibly empty.
+node_posted_slice_nodes <- function(env_adv, env_true) {
+  setdiff(tier_capacities(env_adv)$tier, tier_capacities(env_true)$tier)
+}
+
 #' The round's per-leaf marginal values, descending.
 #'
 #' @param tasks  The round's tasks, carrying a `recipe` column.
@@ -882,6 +896,9 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param deadlines        Integer vector of possible deadlines (ms).
 #' @param lambda_l_default Per-ms value-decay rate.
 #' @param leaf_mix         "uniform" or "skewed".
+#' @param posted_nodes     Nodes whose price the operator posts instead of
+#'                         discovering, for the mixed arm. Defaults to the
+#'                         node the contraction created.
 #' @param exec_clamp       Ceiling on the utilisation the execution model's
 #'                         queue term reads.
 #' @param queue_coef       Multiplier on the execution model's queue term.
@@ -913,13 +930,15 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             cap_target = NA_character_,
                             mechanism = c("market", "random", "edf",
                                           "greedy_ev", "posted_price", "k8s",
-                                          "market_cc", "posted_price_matched"),
+                                          "market_cc", "posted_price_matched",
+                                          "market_posted_slice"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
                             exact_reference = TRUE,
                             reserve_markup = 1,
                             exec_clamp = 0.99, queue_coef = 2,
+                            posted_nodes = NULL,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3) {
   graph_type <- match.arg(graph_type)
@@ -970,6 +989,14 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   # computed on. A governance cap moves capacities, never base latencies, so
   # this is a constant of the run.
   base_true <- base_latency_per_leaf(env_true)
+  # The slice the operator posts a price for, and the price it posts: its own
+  # reserve at the arm's markup, the cloud-billing rule.
+  slice_nodes <- posted_nodes %||% node_posted_slice_nodes(env_adv, env_true)
+  slice_price <- if (mechanism == "market_posted_slice" &&
+                     length(slice_nodes) > 0L) {
+    setNames(rep(p_post_k * (env_adv$reserve_price %||% 0), length(slice_nodes)),
+             slice_nodes)
+  } else NULL
   full   <- subset_name(leaves, leaves)
   fr     <- flow_rank(node_effective_spec(env_true), env_true$anc)
   flow_full <- fr$value[[subset_name(leaves, leaves)]]
@@ -1044,10 +1071,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
         tasks, e, b$util_hat, b$base_latency, state,
         alpha = a, p = p, lambda_l_default = lambda_l_default,
         salvage = salvage, iters = iters, eta = eta, beta = beta,
-        reserve_markup = reserve_markup)
+        reserve_markup = reserve_markup, posted_prices = slice_price)
     }
 
-    if (!mechanism %in% c("market", "market_cc")) {
+    if (!mechanism %in% c("market", "market_cc", "market_posted_slice")) {
       # The five arms that do not discover a price. Each produces a score and
       # the shared packing kernel admits by it under the node capacities, so
       # what separates them is the ranking key and, for the posted price, the
@@ -1537,12 +1564,22 @@ node_exp6_mechanism_grid <- function(n_seeds) {
     # the three markups the cross-instance ordering is reported at.
     tidyr::expand_grid(mechanism = "posted_price_matched",
                        p_post_k  = c(1, 2, 4)))
-  tidyr::expand_grid(
-    arms,
-    graph_type   = c("tree", "sp", "entangled"),
-    load_level   = c("medium", "high"),
-    architecture = c("naive", "hybrid"),
-    seed         = seq_len(n_seeds))
+  bind_rows(
+    tidyr::expand_grid(
+      arms,
+      graph_type   = c("tree", "sp", "entangled"),
+      load_level   = c("medium", "high"),
+      architecture = c("naive", "hybrid"),
+      seed         = seq_len(n_seeds)),
+    # The mixed pricing rule needs a slice to post a price for, so it runs on
+    # the contracted architecture alone.
+    tidyr::expand_grid(
+      mechanism    = "market_posted_slice",
+      p_post_k     = c(1, 2),
+      graph_type   = c("tree", "sp", "entangled"),
+      load_level   = c("medium", "high"),
+      architecture = "hybrid",
+      seed         = seq_len(n_seeds)))
 }
 
 #' Linear interpolation of a measured curve, with no extrapolation.
