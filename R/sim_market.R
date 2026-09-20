@@ -594,11 +594,21 @@ compute_welfare <- function(results_t, env, prices_df,
 
   if (!cong_cost) return(w)
 
-  # Congestion penalty: squared excess utilisation over capacity
-  n_exec  <- sum(results_t$success, na.rm = TRUE)
-  if (n_exec == 0) return(0)
-  util_df <- compute_utilisation_per_tier(env, n_exec)
-  pen     <- sum((pmax(util_df$util - 1, 0))^2, na.rm = TRUE)
+  # Congestion penalty: squared excess utilisation over capacity, on the
+  # REALISED demand of the served mix wherever tasks carry recipes. The count
+  # times the environment's mix-average weight is the advertised quantity, on
+  # the same argument execute_allocation() takes: it charges every resource a
+  # share of traffic that need not have touched it. Under a coordinate
+  # governance cap that share lands on a leaf held at zero capacity, the
+  # utilisation divides to Inf and welfare to -Inf.
+  served <- results_t[which(results_t$success %in% TRUE), , drop = FALSE]
+  if (nrow(served) == 0) return(0)
+  util_df <- if (!is.null(env$recipes) && "recipe" %in% names(served)) {
+    compute_utilisation_per_node(env, served)
+  } else {
+    compute_utilisation_per_tier(env, nrow(served))
+  }
+  pen <- sum((pmax(util_df$util - 1, 0))^2, na.rm = TRUE)
   w - cong_gamma * pen
 }
 
