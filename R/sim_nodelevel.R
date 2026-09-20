@@ -740,6 +740,81 @@ node_leaf_marginals <- function(tasks, ev, leaves) {
            leaves)
 }
 
+#' The round's true value per task: its value at zero queue.
+#'
+#' What a task is worth when nothing is queued in front of it, which is the
+#' quantity both reference optima are computed on. It carries no utilisation
+#' estimate and no success model, so it does not move with the arm's own
+#' congestion state the way a bid-time expected value does.
+#'
+#' @param tasks            The round's tasks, carrying a `recipe` column.
+#' @param base_ms          Per-leaf zero-queue critical path.
+#' @param lambda_l_default Per-ms value-decay rate.
+#' @param salvage          Value retained after a deadline miss.
+#' @return Numeric vector, one entry per task.
+node_true_value <- function(tasks, base_ms, lambda_l_default, salvage = 0) {
+  if (nrow(tasks) == 0L) return(numeric(0))
+  L   <- unname(base_ms[as.character(tasks$recipe)])
+  lam <- if ("lambda_l" %in% names(tasks)) as.numeric(tasks$lambda_l)
+         else lambda_l_default
+  v   <- as.numeric(tasks$value_base) * exp(-lam * L)
+  ifelse(!is.na(tasks$deadline) & L > as.numeric(tasks$deadline), salvage * v, v)
+}
+
+#' The welfare no admission policy can reach on the round.
+#'
+#' The exact leaf-block optimum on the true zero-queue values. It counts the
+#' most valuable tokens the node capacities can carry and charges none of them
+#' for the queue that carrying them creates, so it is an upper bound on every
+#' arm and on the attainable optimum alike.
+#'
+#' @param env    Environment whose capacities define the region.
+#' @param tasks  The round's tasks.
+#' @param v_true Per-task true zero-queue value.
+#' @return Scalar.
+node_zero_queue_ceiling <- function(env, tasks, v_true) {
+  if (nrow(tasks) == 0L) return(0)
+  marg <- node_leaf_marginals(tasks, v_true, rownames(env$anc))
+  lb_optimum(marg, env$anc, node_token_capacity(env))
+}
+
+#' The best realised welfare a planner could take out of the round.
+#'
+#' Over admission sets of the form "the top m tasks by true zero-queue value",
+#' each scored through the execution model itself, so the queue the set creates
+#' is charged to it. Unlike the ceiling this one is attainable, by a planner
+#' who knows the round before it runs.
+#'
+#' # ponytail: a coarse scan of at most `n_grid` sizes plus one refinement over
+#' # the gap it stepped across. The realised-welfare curve in m is unimodal in
+#' # every measured cell (it rises with volume and falls with the queue), so
+#' # the refinement finds the peak; a multi-modal curve would want the full
+#' # scan, at four times the cost.
+#'
+#' @param tasks      The round's tasks.
+#' @param v_true     Per-task true zero-queue value.
+#' @param welfare_of Scores one admission set through the execution model.
+#' @param n_grid     Sizes in the coarse scan.
+#' @return Named vector of `value` and its argmax `m`.
+node_ex_post_optimum <- function(tasks, v_true, welfare_of, n_grid = 25L) {
+  n <- nrow(tasks)
+  if (n == 0L) return(c(value = 0, m = 0))
+  ord <- order(v_true, decreasing = TRUE)
+  at  <- function(m) welfare_of(tasks[ord[seq_len(m)], , drop = FALSE])
+
+  grid <- unique(round(seq(0, n, length.out = min(n + 1L, n_grid))))
+  w    <- vapply(grid, at, numeric(1))
+  step <- max(1L, as.integer(ceiling(n / max(1L, length(grid) - 1L))))
+  peak <- grid[[which.max(w)]]
+  near <- setdiff(seq(max(0, peak - step), min(n, peak + step)), grid)
+  if (length(near) > 0L) {
+    grid <- c(grid, near)
+    w    <- c(w, vapply(near, at, numeric(1)))
+  }
+  i <- which.max(w)
+  c(value = w[[i]], m = grid[[i]])
+}
+
 #' What value-greedy takes on a region and what the exact reference takes.
 #'
 #' Computed OFF the market, on the round's full instance, through the packers:
@@ -848,6 +923,11 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
 
   anc    <- env_adv$anc
   leaves <- rownames(anc)
+  # The zero-queue path of the TRUE instance: what a task is worth before
+  # anything queues in front of it, and the quantity both references are
+  # computed on. A governance cap moves capacities, never base latencies, so
+  # this is a constant of the run.
+  base_true <- base_latency_per_leaf(env_true)
   full   <- subset_name(leaves, leaves)
   fr     <- flow_rank(node_effective_spec(env_true), env_true$anc)
   flow_full <- fr$value[[subset_name(leaves, leaves)]]
@@ -878,6 +958,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   unitCostV <- clearV <- servedV <- numeric(n_rounds)
   priceCvV  <- tokensV <- bindV <- numeric(n_rounds)
   ratioV    <- shapeV <- strandV <- rep(NA_real_, n_rounds)
+  ceilV     <- optV <- optMV <- numeric(n_rounds)
   overV     <- numeric(n_rounds)
   armV      <- rep(NA_real_, n_rounds)
   certV     <- rep(NA, n_rounds)
@@ -1033,6 +1114,20 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     oracleV[t] <- orc$oracle_value
     effV[t]    <- ifelse(oracleV[t] > 0, welfareV[t] / oracleV[t], NA_real_)
 
+    # The two references, computed OFF the market on the true instance: the
+    # ceiling counts the best tokens the node capacities carry and charges
+    # none of them for the queue, the ex-post optimum charges every one of
+    # them through the execution model. Neither draws, so the arm's own
+    # stream does not move by their presence.
+    v_true   <- node_true_value(tasks_all, base_true, lambda_l_default, salvage)
+    ceilV[t] <- node_zero_queue_ceiling(envT, tasks_all, v_true)
+    opt      <- node_ex_post_optimum(tasks_all, v_true, function(a)
+      compute_welfare(execute_allocation(a, envT, latency_noise_cv = 0), envT,
+                      ms$prices, lambda_l_default = lambda_l_default,
+                      salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05))
+    optV[t]  <- opt[["value"]]
+    optMV[t] <- opt[["m"]]
+
     # The structural instrument, computed OFF the market on the round's full
     # instance: admission passes through the tatonnement's positive-surplus
     # filter, which rations on price and would bury a packing gap of a per cent
@@ -1072,6 +1167,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   }
 
   below <- ratioV < 1 - 1e-9
+  # The steady state the references are read on, and the same window for the
+  # welfare they are divided into: a ratio whose numerator and denominator
+  # covered different rounds would be a comparison of two windows.
+  w_tail    <- mean(post_burn_in(welfareV), na.rm = TRUE)
+  ceil_tail <- mean(post_burn_in(ceilV), na.rm = TRUE)
+  opt_tail  <- mean(post_burn_in(optV), na.rm = TRUE)
+  over <- function(x) if (isTRUE(x > 0)) w_tail / x else NA_real_
   tibble(
     graph_type                 = graph_type,
     load_level                 = load_level,
@@ -1093,6 +1195,14 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     welfare                    = mean(welfareV, na.rm = TRUE),
     oracle_welfare             = mean(oracleV, na.rm = TRUE),
     efficiency                 = mean(effV, na.rm = TRUE),
+    # The welfare no admission policy can reach, the best one a planner who
+    # knew the round could, the size of the set that reaches it, and where
+    # this arm sits between them. All four on the post-burn-in rounds.
+    ceiling_zero_queue         = ceil_tail,
+    optimum_ex_post            = opt_tail,
+    optimum_ex_post_m          = mean(post_burn_in(optMV), na.rm = TRUE),
+    welfare_over_optimum       = over(opt_tail),
+    welfare_over_ceiling       = over(ceil_tail),
     mean_unit_cost             = mean(unitCostV, na.rm = TRUE),
     mean_price_volatility      = agent_price_volatility(unitCostV),
     mean_price_volatility_tail = agent_price_volatility_tail(unitCostV),
@@ -1228,7 +1338,8 @@ node_metrics <- function() {
   # calibration and is not contrasted.
   c("median_latency", "drop_rate", "utilisation", "welfare", "arm_exact_ratio",
     "mean_price_volatility", "mean_price_volatility_tail",
-    "greedy_exact_ratio", "tokens_admitted", "served_among_admitted")
+    "greedy_exact_ratio", "tokens_admitted", "served_among_admitted",
+    "welfare_over_optimum")
 }
 
 #' Per-cell summary of one factor over the node responses.

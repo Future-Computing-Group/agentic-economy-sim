@@ -639,9 +639,15 @@ critical_path_to_leaves <- function(graph, node_latency, leaves) {
 #'                          (Exp.12). Added to the critical-path latency
 #'                          before the deadline check, so it raises latency,
 #'                          deadline misses, and lowers welfare. Default 0.
+#' @param latency_noise_cv  Coefficient of variation of the per-task execution
+#'                          noise. At 0 the round's critical path is delivered
+#'                          exactly and no draw is taken, which is what a
+#'                          reference set scored inside a round loop needs: a
+#'                          draw there would shift the arm's own stream. The
+#'                          default is the model's 10 per cent.
 #' @return A tibble with columns: task_id, agent_id, latency, deadline, success.
 execute_allocation <- function(allocation, env, efficiency_factor = NULL,
-                               enc_overhead_ms = 0) {
+                               enc_overhead_ms = 0, latency_noise_cv = 0.1) {
   n_tasks <- nrow(allocation)
   if (n_tasks == 0) {
     return(tibble(
@@ -716,7 +722,12 @@ execute_allocation <- function(allocation, env, efficiency_factor = NULL,
   # ---- 4. Per-task latency with Gaussian noise (CV = 10%) ----
   allocation %>%
     mutate(
-      latency = rnorm(n(), mean = critical_latency, sd = 0.1 * critical_latency),
+      latency = if (latency_noise_cv > 0) {
+        rnorm(n(), mean = critical_latency,
+              sd = latency_noise_cv * critical_latency)
+      } else {
+        critical_latency
+      },
       success = latency <= deadline
     )
 }

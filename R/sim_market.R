@@ -46,6 +46,18 @@ price_eta <- 0.15
 # price dynamics.
 burn_in_fraction <- 0.2
 
+#' The rounds a steady-state summary is taken over.
+#'
+#' One expression for every response that reports a steady state rather than a
+#' whole run, so "after the burn-in" means the same window in each of them.
+#'
+#' @param x        A per-round series.
+#' @param fraction Opening fraction of the run to drop.
+#' @return The retained tail of the series.
+post_burn_in <- function(x, fraction = burn_in_fraction) {
+  tail(x, length(x) - floor(fraction * length(x)))
+}
+
 
 #' Exponential moving average on a posted price.
 #'
@@ -533,8 +545,7 @@ agent_price_volatility <- function(unit_cost_series, mean_floor = 0.01) {
 #' @return Scalar volatility on the retained rounds, NA on fewer than 3.
 agent_price_volatility_tail <- function(unit_cost_series,
                                         fraction = burn_in_fraction) {
-  n <- length(unit_cost_series)
-  agent_price_volatility(tail(unit_cost_series, n - floor(fraction * n)))
+  agent_price_volatility(post_burn_in(unit_cost_series, fraction))
 }
 
 #' Update market state from round execution results.
