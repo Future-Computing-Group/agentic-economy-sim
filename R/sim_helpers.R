@@ -639,6 +639,13 @@ critical_path_to_leaves <- function(graph, node_latency, leaves) {
 #'                          (Exp.12). Added to the critical-path latency
 #'                          before the deadline check, so it raises latency,
 #'                          deadline misses, and lowers welfare. Default 0.
+#' @param util_clamp       Ceiling on the utilisation the queue term reads. The
+#'                          queue pole is at one, so the ceiling sets what a
+#'                          saturated node costs; it is a parameter of the
+#'                          model rather than a derived quantity, which is why
+#'                          the sweep varies it.
+#' @param queue_coefficient Multiplier on the M/M/1 queue term, the second
+#'                          half of the queue's calibration.
 #' @param latency_noise_cv  Coefficient of variation of the per-task execution
 #'                          noise. At 0 the round's critical path is delivered
 #'                          exactly and no draw is taken, which is what a
@@ -647,7 +654,8 @@ critical_path_to_leaves <- function(graph, node_latency, leaves) {
 #'                          default is the model's 10 per cent.
 #' @return A tibble with columns: task_id, agent_id, latency, deadline, success.
 execute_allocation <- function(allocation, env, efficiency_factor = NULL,
-                               enc_overhead_ms = 0, latency_noise_cv = 0.1) {
+                               enc_overhead_ms = 0, latency_noise_cv = 0.1,
+                               util_clamp = 0.99, queue_coefficient = 2) {
   n_tasks <- nrow(allocation)
   if (n_tasks == 0) {
     return(tibble(
@@ -688,9 +696,10 @@ execute_allocation <- function(allocation, env, efficiency_factor = NULL,
       demand_weight = coalesce(demand_weight, as.numeric(nodes)),
       demand        = if (is.null(realised)) demand_weight * n_tasks * eff
                       else unname(realised[tier]) * eff,
-      rho           = pmin(0.99, demand / pmax(capacity, 1)),
+      rho           = pmin(util_clamp, demand / pmax(capacity, 1)),
       # M/M/1-inspired queueing delay, capped at 500 ms
-      queue_term    = env$load_factor * (rho / (1 - rho + 1e-3)) * 2,
+      queue_term    = env$load_factor * (rho / (1 - rho + 1e-3)) *
+                        queue_coefficient,
       tier_latency  = base_ms + pmin(queue_term, 500)
     )
 

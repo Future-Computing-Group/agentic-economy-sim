@@ -898,6 +898,30 @@ list(
   tar_target(node_exp6_tuned,
              node_tuned_table(bind_rows(node_exp6_eval_raw))),
 
+  # -- the sensitivity beside the numbers, not after them -------------------
+  # One factor at a time from the headline setting, plus the queue term
+  # retuned to the load response the emulated testbed measured.
+  tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
+  tar_target(
+    node_exp6_sensitivity,
+    node_run_single(
+      graph_type       = node_exp6_sensitivity_grid$graph_type,
+      load_level       = node_exp6_sensitivity_grid$load_level,
+      seed             = node_exp6_sensitivity_grid$seed,
+      N                = node_agent_counts[[node_exp6_sensitivity_grid$graph_type]],
+      mechanism        = node_exp6_sensitivity_grid$mechanism,
+      p_post_k         = node_exp6_sensitivity_grid$p_post_k,
+      alpha            = node_exp6_sensitivity_grid$alpha,
+      exec_clamp       = node_exp6_sensitivity_grid$exec_clamp,
+      queue_coef       = node_exp6_sensitivity_grid$queue_coef,
+      n_rounds         = n_rounds,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_exp6_sensitivity_grid$lambda_l
+    ) %>% dplyr::mutate(setting = node_exp6_sensitivity_grid$setting),
+    pattern   = map(node_exp6_sensitivity_grid),
+    iteration = "vector"
+  ),
+
   # -- the incentive arms, under the certificate -----------------------------
   # The certified arms run at the evaluation populations, where the capacity
   # vector already binds; the uncertified converse runs at the population the

@@ -747,16 +747,17 @@ node_bid_inputs <- function(env, tasks, prev_util) {
 #' on top of the one being measured -- and it is why the arm is reported
 #' beside the market and never instead of it.
 #'
-#' @param env       Environment list from node_env().
-#' @param prev_util Previous round's per-node utilisation, or NULL.
+#' @param env         Environment list from node_env().
+#' @param prev_util   Previous round's per-node utilisation, or NULL.
+#' @param coefficient Multiplier on the queue term, the execution model's own.
 #' @return Named numeric vector, one latency estimate per leaf.
-node_queue_latency_per_leaf <- function(env, prev_util) {
+node_queue_latency_per_leaf <- function(env, prev_util, coefficient = 2) {
   base <- base_latency_per_leaf(env)
   if (is.null(prev_util)) return(base)
   anc <- env$anc
   u   <- prev_util$util[match(colnames(anc), prev_util$tier)]
   u[is.na(u)] <- 0
-  q   <- env$load_factor * (pmax(u, 0) / (1 - pmax(u, 0) + 1e-3)) * 2
+  q   <- env$load_factor * (pmax(u, 0) / (1 - pmax(u, 0) + 1e-3)) * coefficient
   base + as.numeric(anc %*% q)
 }
 
@@ -881,6 +882,9 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param deadlines        Integer vector of possible deadlines (ms).
 #' @param lambda_l_default Per-ms value-decay rate.
 #' @param leaf_mix         "uniform" or "skewed".
+#' @param exec_clamp       Ceiling on the utilisation the execution model's
+#'                         queue term reads.
+#' @param queue_coef       Multiplier on the execution model's queue term.
 #' @param reserve_markup   Multiplier on the per-node reserve the market arms
 #'                         clamp their prices to: the market's tuned knob, the
 #'                         counterpart of the posted price's markup.
@@ -915,6 +919,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             spec = NULL,
                             exact_reference = TRUE,
                             reserve_markup = 1,
+                            exec_clamp = 0.99, queue_coef = 2,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3) {
   graph_type <- match.arg(graph_type)
@@ -1031,8 +1036,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       # the success model sees what it always saw.
       a <- alpha
       if (mechanism == "market_cc") {
-        b$base_latency <- unname(node_queue_latency_per_leaf(e, prev_util)[
-          as.character(tasks$recipe)])
+        b$base_latency <- unname(node_queue_latency_per_leaf(
+          e, prev_util, coefficient = queue_coef)[as.character(tasks$recipe)])
         a <- 0
       }
       clear_multitier_market(
@@ -1120,7 +1125,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     # Executed against the TRUE instance: an advertised scalar the internal
     # routing cannot honour admits a mix the physical nodes still have to
     # queue, which is where an over-committing interface pays for itself.
-    results_t <- execute_allocation(allocation, envT)
+    results_t <- execute_allocation(allocation, envT, util_clamp = exec_clamp,
+                                    queue_coefficient = queue_coef)
     if (nrow(results_t) > 0 &&
         !all(c("deadline", "value_base") %in% names(results_t))) {
       results_t <- results_t %>%
@@ -1184,7 +1190,9 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     v_true   <- node_true_value(tasks_all, base_true, lambda_l_default, salvage)
     ceilV[t] <- node_zero_queue_ceiling(envT, tasks_all, v_true)
     opt      <- node_ex_post_optimum(tasks_all, v_true, function(a)
-      compute_welfare(execute_allocation(a, envT, latency_noise_cv = 0), envT,
+      compute_welfare(execute_allocation(a, envT, latency_noise_cv = 0,
+                                         util_clamp = exec_clamp,
+                                         queue_coefficient = queue_coef), envT,
                       ms$prices, lambda_l_default = lambda_l_default,
                       salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05))
     optV[t]  <- opt[["value"]]
@@ -1254,6 +1262,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     mechanism                  = mechanism,
     p_post_k                   = as.numeric(p_post_k),
     reserve_markup             = as.numeric(reserve_markup),
+    exec_clamp                 = as.numeric(exec_clamp),
+    queue_coef                 = as.numeric(queue_coef),
     # The dose a task faces at marginal cost on the region this cell cleared
     # over: the cheapest leaf's own path at the per-node reserve, which is the
     # unmatched control every cross-instance posted-price contrast carries.
@@ -1726,6 +1736,76 @@ node_tuned_table <- function(eval_raw,
               median_latency       = mean(median_latency, na.rm = TRUE),
               welfare_over_optimum = mean(welfare_over_optimum, na.rm = TRUE),
               .groups = "drop")
+}
+
+
+# ===========================================================================
+# The sensitivity sweep beside the mechanism numbers
+# ===========================================================================
+
+#' Elasticity of median latency to offered load between two load levels.
+#'
+#' The statistic the testbed comparison is calibrated on: the proportional
+#' change in median latency over the proportional change in offered work. Two
+#' loads that offered the same work measure no sensitivity rather than an
+#' infinite one, so that case is NA.
+#'
+#' @param rows_lo,rows_hi Result rows at the lower and the higher load.
+#' @return Scalar elasticity.
+node_load_elasticity <- function(rows_lo, rows_hi) {
+  offered <- function(r) mean(r$tokens_admitted / r$clearing_fraction, na.rm = TRUE)
+  den <- offered(rows_hi) / offered(rows_lo) - 1
+  if (!isTRUE(is.finite(den)) || abs(den) < 1e-9) return(NA_real_)
+  (mean(rows_hi$median_latency, na.rm = TRUE) /
+      mean(rows_lo$median_latency, na.rm = TRUE) - 1) / den
+}
+
+#' The parameter settings the mechanism comparison is repeated at.
+#'
+#' One factor at a time from the headline setting, plus one setting that is
+#' not a level of any factor: the execution queue term retuned so that the
+#' simulator's elasticity of median latency to offered load matches what the
+#' emulated testbed measured on real inference. The sweep behind that setting
+#' and its fit are written to the results directory, not carried here.
+#'
+#' @return One row per setting, each a full parameter vector.
+node_sensitivity_settings <- function() {
+  base <- tibble(setting = "baseline", lambda_l = node_lambda_l(),
+                 exec_clamp = 0.99, alpha = 50, queue_coef = 2)
+  vary <- function(knob, values) {
+    purrr::map_dfr(values, function(v) {
+      row <- base
+      row[[knob]] <- v
+      row$setting <- paste0(knob, "_", v)
+      row
+    })
+  }
+  bind_rows(
+    base,
+    vary("lambda_l", c(0.0025, 0.005, 0.015)),
+    vary("exec_clamp", c(0.95, 0.995)),
+    vary("alpha", 200),
+    # Measured against the testbed rather than chosen: the queue term whose
+    # elasticity of median latency to offered load lands on what real
+    # inference produced, on this instance at these two loads. The sweep and
+    # its fit are in the calibration table in the results directory. The
+    # branch of the sweep that reaches the same elasticity by saturating both
+    # loads against the per-node queue ceiling is not this one.
+    tibble(setting = "calibrated", lambda_l = node_lambda_l(),
+           exec_clamp = 0.95, alpha = 50, queue_coef = 0.75))
+}
+
+#' The grid the sensitivity sweep branches over.
+#'
+#' @param seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_sensitivity_grid <- function(seeds = 1:5) {
+  arms <- tibble(mechanism = c("market", "market_cc", "posted_price",
+                               "greedy_ev"),
+                 p_post_k  = c(1, 1, 2, 1))
+  tidyr::expand_grid(node_sensitivity_settings(), arms,
+                     graph_type = c("tree", "sp", "entangled"),
+                     load_level = "high", seed = seeds)
 }
 
 
