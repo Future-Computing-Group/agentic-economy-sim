@@ -122,9 +122,18 @@ test_that("homogeneous recipes reproduce the recorded single-bundle clearing", {
                            eta = eta_recorded)
   }
 
+  # A clearing summary that gains a further statistic of the same round is
+  # compared on the entries the fixture recorded, exactly as the allocation is
+  # compared on the columns it recorded: an added entry cannot move them.
+  as_recorded <- function(got, ref) {
+    got$clearing <- got$clearing[names(ref$clearing)]
+    got
+  }
+
   for (cell in c("saturated", "slack")) {
     # (a) the refactor itself is neutral: no recipes at all.
-    expect_identical(clear_cell(cell, NULL, NULL), fix[[cell]])
+    expect_identical(as_recorded(clear_cell(cell, NULL, NULL), fix[[cell]]),
+                     fix[[cell]])
     # (b) the recipe path collapses: every task carries the mix-average bundle.
     # The allocation gains the recipe column -- it has to, since execution
     # charges the admitted mix -- so the comparison is on the columns the
@@ -136,7 +145,7 @@ test_that("homogeneous recipes reproduce the recorded single-bundle clearing", {
     expect_identical(got$allocation[names(fix[[cell]]$allocation)],
                      fix[[cell]]$allocation)
     got$allocation <- fix[[cell]]$allocation
-    expect_identical(got, fix[[cell]])
+    expect_identical(as_recorded(got, fix[[cell]]), fix[[cell]])
   }
 })
 

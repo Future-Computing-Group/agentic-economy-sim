@@ -444,6 +444,28 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
   s_final    <- recipe_surplus(ev, prices)
   allocation <- pack_tasks_greedy(tasks_all, s_final, env)
 
+  # What the tatonnement could not clear AT its terminal prices: the demand of
+  # the tasks still in surplus there, against capacity, as a share of total
+  # capacity. It is the one response that can say a price vector clearing the
+  # round does not exist on this region, and it was computed inside the loop
+  # above and thrown away.
+  pos_final <- which(s_final > 0)
+  residual  <- cap %>%
+    left_join(tibble(tier = bundle$tier,
+                     total_demand = if (het)
+                       colSums(A[pos_final, , drop = FALSE])
+                     else bundle$demand * length(pos_final)),
+              by = "tier") %>%
+    mutate(total_demand = replace_na(total_demand, 0))
+  resid_excess <- sum(pmax(residual$total_demand - residual$capacity, 0)) /
+    sum(residual$capacity)
+
+  # The basket at the price the round CLEARED at, before any smoothing. The
+  # agent-facing cost below is the same basket after it, so a dispersion
+  # measured on one and attributed to the other is the filter's arithmetic.
+  x_cleared         <- bundle %>% left_join(prices, by = "tier")
+  unit_cost_cleared <- sum(x_cleared$demand * x_cleared$price, na.rm = TRUE)
+
   # EMA posting rule, mirroring the integrator's slice-price smoothing: the
   # pack above ran at the raw clearing prices, so beta moves the price the
   # agent is charged without moving the allocation. This is the smoothing
@@ -465,7 +487,11 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
     prices       = prices,
     unit_cost    = unit_cost,
     n_alloc      = nrow(allocation),
-    mean_surplus = mean(s_final[s_final > 0], na.rm = TRUE)
+    mean_surplus = mean(s_final[s_final > 0], na.rm = TRUE),
+    # Appended rather than interleaved: a caller that reads this list by
+    # position keeps reading what it read before.
+    unit_cost_cleared = unit_cost_cleared,
+    resid_excess      = resid_excess
   )
 
   market_state$prices <- prices

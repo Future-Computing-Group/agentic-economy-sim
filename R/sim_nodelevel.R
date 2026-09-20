@@ -996,7 +996,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   priceCvV  <- tokensV <- bindV <- numeric(n_rounds)
   ratioV    <- shapeV <- strandV <- rep(NA_real_, n_rounds)
   ceilV     <- optV <- optMV <- numeric(n_rounds)
-  trueV     <- rep(NA_real_, n_rounds)
+  trueV     <- residV <- clearedCostV <- rep(NA_real_, n_rounds)
   overV     <- numeric(n_rounds)
   armV      <- rep(NA_real_, n_rounds)
   certV     <- rep(NA, n_rounds)
@@ -1073,6 +1073,9 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
         # The price is what agents face whether or not they take it, so it is
         # recorded every round, as the market arm records what it cleared at.
         unitCostV[t] <- if (n_gen == 0L) NA_real_ else mean(p_task)
+        # A posted price passes through no filter, so what the agent faces and
+        # what the operator posted are one series.
+        clearedCostV[t] <- unitCostV[t]
       } else {
         allocation   <- pack_tasks_greedy(tasks_all, scores, env)
         unitCostV[t] <- NA_real_
@@ -1095,6 +1098,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                           c_ne$clearing$prices, eu_leaves,
                                           leaves)
       unitCostV[t] <- mean(c(c_eu$clearing$unit_cost, c_ne$clearing$unit_cost))
+      clearedCostV[t] <- mean(c(c_eu$clearing$unit_cost_cleared,
+                                c_ne$clearing$unit_cost_cleared))
+      residV[t]    <- mean(c(c_eu$clearing$resid_excess,
+                             c_ne$clearing$resid_excess))
       offered <- table(factor(as.character(tasks_all$recipe), levels = leaves))
       strandV[t] <- node_stranded_demand(offered[[coupled_pair[1]]],
                                          offered[[coupled_pair[2]]], 50, 25)
@@ -1105,6 +1112,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                            cleared$market_state$prices)
       prices       <- cleared$clearing$prices
       unitCostV[t] <- cleared$clearing$unit_cost
+      clearedCostV[t] <- cleared$clearing$unit_cost_cleared
+      residV[t]    <- cleared$clearing$resid_excess
     }
     priceCvV[t] <- cross_leaf_price_cv(prices, anc)
 
@@ -1272,6 +1281,14 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     mean_unit_cost             = mean(unitCostV, na.rm = TRUE),
     mean_price_volatility      = agent_price_volatility(unitCostV),
     mean_price_volatility_tail = agent_price_volatility_tail(unitCostV),
+    # The same dispersion on the price the round cleared at, before the
+    # smoothing filter. Where no filter is applied the two coincide, which is
+    # what makes their ratio on a smoothed arm readable as the filter's own.
+    price_volatility_cleared   = agent_price_volatility_tail(clearedCostV),
+    # What the tatonnement still could not clear at its terminal prices,
+    # averaged over the post-burn-in rounds. NA where no price is discovered.
+    resid_excess               = if (all(is.na(residV))) NA_real_
+                                 else mean(post_burn_in(residV), na.rm = TRUE),
     # The reportable structural statistic is the round INCIDENCE and the tail
     # of the ratio, not its mean alone: a gap that opens in a fifth of the
     # rounds and closes in the rest averages to a number that looks like noise.
@@ -1412,7 +1429,8 @@ node_metrics <- function() {
   c("median_latency", "drop_rate", "utilisation", "welfare", "arm_exact_ratio",
     "mean_price_volatility", "mean_price_volatility_tail",
     "greedy_exact_ratio", "tokens_admitted", "served_among_admitted",
-    "welfare_over_optimum", "alloc_ratio_true")
+    "welfare_over_optimum", "alloc_ratio_true", "resid_excess",
+    "price_volatility_cleared")
 }
 
 #' Per-cell summary of one factor over the node responses.
