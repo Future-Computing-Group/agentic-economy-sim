@@ -909,7 +909,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             cap_target = NA_character_,
                             mechanism = c("market", "random", "edf",
                                           "greedy_ev", "posted_price", "k8s",
-                                          "market_cc"),
+                                          "market_cc", "posted_price_matched"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
@@ -1059,9 +1059,16 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
           alpha = alpha, p = p,
           lambda_l_default = lambda_l_default, salvage = salvage))
 
-      if (mechanism == "posted_price") {
-        p_leaf <- posted_price_anchor_per_leaf(env, anc, k = p_post_k)
-        p_task <- unname(p_leaf[as.character(tasks_all$recipe)])
+      if (mechanism %in% c("posted_price", "posted_price_matched")) {
+        p_task <- if (mechanism == "posted_price_matched") {
+          # One dose for every instance, so the cross-instance ordering is
+          # read at equal dose rather than at each instance's own path cost.
+          rep(node_matched_anchor(p_post_k), n_gen)
+        } else {
+          unname(posted_price_anchor_per_leaf(env, anc,
+                                              k = p_post_k)[
+                                                as.character(tasks_all$recipe)])
+        }
         allocation   <- posted_price_allocate(tasks_all, env, scores, p_task)
         # The price is what agents face whether or not they take it, so it is
         # recorded every round, as the market arm records what it cleared at.
@@ -1238,6 +1245,11 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     mechanism                  = mechanism,
     p_post_k                   = as.numeric(p_post_k),
     reserve_markup             = as.numeric(reserve_markup),
+    # The dose a task faces at marginal cost on the region this cell cleared
+    # over: the cheapest leaf's own path at the per-node reserve, which is the
+    # unmatched control every cross-instance posted-price contrast carries.
+    posted_anchor_k1           = min(posted_price_anchor_per_leaf(env, anc,
+                                                                  k = 1)),
     policy                     = policy,
     cap_target                 = cap_target,
     median_latency             = mean(medL, na.rm = TRUE),
@@ -1459,6 +1471,23 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
 #' @return Numeric vector of markups over marginal cost.
 node_posted_levels <- function() c(1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4)
 
+#' The posted anchor of the instance every other instance is dosed against.
+#'
+#' The anchor is a leaf's own path at the per-node reserve, so an instance
+#' whose leaves pass through five nodes charges five thirds of one whose
+#' leaves pass through three, on an identical value distribution, and a
+#' cross-instance ordering under the posted price is partly an ordering of
+#' doses. This is the reference instance's cheapest-path anchor, which the
+#' matched level posts everywhere.
+#'
+#' @param k         Markup over marginal cost.
+#' @param reference The instance whose dose the others are read at.
+#' @return Scalar posted price per task.
+node_matched_anchor <- function(k = 1, reference = "tree") {
+  env <- node_env(reference, "high", node_agents()[[reference]])
+  k * min(posted_price_anchor_per_leaf(env, env$anc, k = 1))
+}
+
 #' The node substrate's own mechanism grid.
 #'
 #' Its own function rather than a level added to the per-tier one: the two
@@ -1475,7 +1504,11 @@ node_exp6_mechanism_grid <- function(n_seeds) {
                     "k8s"),
       p_post_k  = 1),
     tidyr::expand_grid(mechanism = "posted_price",
-                       p_post_k  = node_posted_levels()))
+                       p_post_k  = node_posted_levels()),
+    # The matched level is a dose control rather than a curve, so it runs at
+    # the three markups the cross-instance ordering is reported at.
+    tidyr::expand_grid(mechanism = "posted_price_matched",
+                       p_post_k  = c(1, 2, 4)))
   tidyr::expand_grid(
     arms,
     graph_type   = c("tree", "sp", "entangled"),
