@@ -172,3 +172,59 @@ test_that("the frontier reads the arm-independent ratio", {
   f <- node_frontier_table(dplyr::mutate(raw, architecture = "naive"))
   expect_equal(f$alloc_ratio, raw$alloc_ratio_true)
 })
+
+# ---- the reference is scored on the region in force ------------------------
+
+test_that("the ex-post reference counts only admission sets the region can carry", {
+  # A governance cap is a real restriction: a leaf held at zero carries
+  # nothing, so an admission set that routes through it is not an admission
+  # set the round could have had.
+  env    <- .opt_env()
+  closed <- apply_leaf_caps(env, c(l1 = 0))
+  tasks  <- .opt_tasks()
+  v      <- node_true_value(tasks, base_latency_per_leaf(env), 0.005)
+  score  <- function(e) function(a) compute_welfare(
+    execute_allocation(a, e, latency_noise_cv = 0), e, NULL,
+    lambda_l_default = 0.005)
+
+  shut <- node_ex_post_optimum(tasks, v, score(closed), closed)
+  expect_equal(shut[["value"]], 0)
+  expect_equal(shut[["m"]], 0)
+
+  # Where nothing is capped the reference is the one it always was.
+  expect_equal(node_ex_post_optimum(tasks, v, score(env), env),
+               node_ex_post_optimum(tasks, v, score(env)))
+})
+
+test_that("a closed leaf is worth nothing to the reference, not something", {
+  # Two leaves, one closed: the reference on the round equals the reference on
+  # the round with the closed leaf's tasks taken out of it.
+  env    <- .opt_env(scale = 0.5)
+  closed <- apply_leaf_caps(env, c(l1 = 0))
+  tasks  <- tibble::tibble(task_id = c("t1", "t2", "t3", "t4"),
+                           agent_id = 1:4, deadline = 500,
+                           value_base = c(4, 3, 2, 1),
+                           recipe = c("l1", "l4", "l1", "l4"))
+  v     <- node_true_value(tasks, base_latency_per_leaf(env), 0.005)
+  score <- function(a) compute_welfare(
+    execute_allocation(a, closed, latency_noise_cv = 0), closed, NULL,
+    lambda_l_default = 0.005)
+
+  keep <- tasks$recipe != "l1"
+  expect_equal(node_ex_post_optimum(tasks, v, score, closed)[["value"]],
+               node_ex_post_optimum(tasks[keep, ], v[keep], score,
+                                    closed)[["value"]])
+})
+
+test_that("the driver scores the capped arm against the capped region", {
+  one <- function(...) node_run_single("entangled", "high", N = 90L, seed = 1L,
+                                       n_rounds = 5L,
+                                       lambda_l_default = node_lambda_l(), ...)
+  free   <- one()
+  capped <- one(cap_target = "l1")
+  # The closed leaf's tasks cannot be delivered, so the planner's best round
+  # is worth less than it was; a reference that ignored the cap would leave
+  # the capped arm measured against a round it could not have had.
+  expect_lt(capped$optimum_ex_post, free$optimum_ex_post)
+  expect_lt(capped$ceiling_zero_queue, free$ceiling_zero_queue)
+})

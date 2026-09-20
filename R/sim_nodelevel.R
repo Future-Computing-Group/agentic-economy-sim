@@ -841,13 +841,26 @@ node_zero_queue_ceiling <- function(env, tasks, v_true) {
 #' @param tasks      The round's tasks.
 #' @param v_true     Per-task true zero-queue value.
 #' @param welfare_of Scores one admission set through the execution model.
+#' @param env        The region in force. Each candidate set is packed under
+#'                   its capacities before it is scored, so a set the region
+#'                   cannot carry -- through a leaf a governance cap holds at
+#'                   zero, or past a node's capacity -- is not a set the
+#'                   planner is credited with. NULL scores the raw prefix.
 #' @param n_grid     Sizes in the coarse scan.
-#' @return Named vector of `value` and its argmax `m`.
-node_ex_post_optimum <- function(tasks, v_true, welfare_of, n_grid = 25L) {
+#' @return Named vector of `value` and the prefix size `m` it came from.
+node_ex_post_optimum <- function(tasks, v_true, welfare_of, env = NULL,
+                                 n_grid = 25L) {
   n <- nrow(tasks)
   if (n == 0L) return(c(value = 0, m = 0))
   ord <- order(v_true, decreasing = TRUE)
-  at  <- function(m) welfare_of(tasks[ord[seq_len(m)], , drop = FALSE])
+  at  <- function(m) {
+    take <- ord[seq_len(m)]
+    set  <- tasks[take, , drop = FALSE]
+    if (!is.null(env) && m > 0L) {
+      set <- set[.greedy_pack_by(v_true[take], set, env), , drop = FALSE]
+    }
+    welfare_of(set)
+  }
 
   grid <- unique(round(seq(0, n, length.out = min(n + 1L, n_grid))))
   w    <- vapply(grid, at, numeric(1))
@@ -1221,7 +1234,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                          util_clamp = exec_clamp,
                                          queue_coefficient = queue_coef), envT,
                       ms$prices, lambda_l_default = lambda_l_default,
-                      salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05))
+                      salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05),
+      envT)
     optV[t]  <- opt[["value"]]
     optMV[t] <- opt[["m"]]
     # What this arm admitted, valued on the same zero-queue values as the
