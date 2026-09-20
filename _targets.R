@@ -818,7 +818,7 @@ list(
                               interaction_vars = c("architecture", "policy"))),
 
   # -- the mechanism ablation ------------------------------------------------
-  tar_target(node_exp6_param_grid, exp6_mechanism_grid(n_seeds)),
+  tar_target(node_exp6_param_grid, node_exp6_mechanism_grid(n_seeds)),
   tar_target(
     node_exp6_results_raw,
     node_run_single(
@@ -842,6 +842,11 @@ list(
                             c("mechanism", "p_post_k", "architecture",
                               "graph_type", "load_level"))),
   tar_target(node_stats_exp6, stat_exp6(bind_rows(node_exp6_results_raw))),
+  # Every arm as a point in the posted family's own plane, so the comparison
+  # is read at matched congestion rather than at whatever volume each arm
+  # happened to admit.
+  tar_target(node_exp6_frontier,
+             node_frontier_table(bind_rows(node_exp6_results_raw))),
 
   # -- the incentive arms, under the certificate -----------------------------
   # The certified arms run at the evaluation populations, where the capacity

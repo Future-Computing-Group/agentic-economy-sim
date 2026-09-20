@@ -1273,6 +1273,140 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
 
 
 # ===========================================================================
+# The mechanism block on this substrate: the grid and the posted-price frontier
+# ===========================================================================
+
+#' The posted levels the node mechanism block runs.
+#'
+#' A posted level is a rationing dial rather than a mechanism, so a family of
+#' three levels is three points on a curve and not three arms: between them the
+#' curve is unmeasured, and a comparison against a discovered price at one
+#' level compares two admitted volumes as much as two mechanisms. The three
+#' original levels are kept so the rows run at them reproduce.
+#'
+#' @return Numeric vector of markups over marginal cost.
+node_posted_levels <- function() c(1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4)
+
+#' The node substrate's own mechanism grid.
+#'
+#' Its own function rather than a level added to the per-tier one: the two
+#' experiments share a driver-level design and nothing else, and refining the
+#' posted family here would otherwise re-run every per-tier branch under prices
+#' its evaluation never posted.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_exp6_mechanism_grid <- function(n_seeds) {
+  arms <- bind_rows(
+    tidyr::expand_grid(
+      mechanism = c("random", "edf", "greedy_ev", "market", "k8s"),
+      p_post_k  = 1),
+    tidyr::expand_grid(mechanism = "posted_price",
+                       p_post_k  = node_posted_levels()))
+  tidyr::expand_grid(
+    arms,
+    graph_type   = c("tree", "sp", "entangled"),
+    load_level   = c("medium", "high"),
+    architecture = c("naive", "hybrid"),
+    seed         = seq_len(n_seeds))
+}
+
+#' Linear interpolation of a measured curve, with no extrapolation.
+#'
+#' Outside the measured range the answer is NA rather than the nearest level's
+#' value: reading a concave curve past its last point would invent the number
+#' the frontier exists to measure. Repeated x values are averaged first, which
+#' is what two posted levels that both ration everything away look like.
+#'
+#' @param x,y  The measured points.
+#' @param xout Where to read the curve.
+#' @return Numeric vector the length of `xout`.
+.curve_at <- function(x, y, xout) {
+  ok <- is.finite(x) & is.finite(y)
+  if (sum(ok) < 2L) return(rep(NA_real_, length(xout)))
+  d <- stats::aggregate(list(y = y[ok]), list(x = x[ok]), mean)
+  if (nrow(d) < 2L) return(rep(NA_real_, length(xout)))
+  stats::approx(d$x, d$y, xout = xout)$y
+}
+
+#' Mean and 95 per cent t interval of a per-seed ratio.
+#'
+#' The pairing is inside the ratio: each seed's arm is divided by the posted
+#' curve of that same seed, so the interval is on the paired differences in
+#' logs' own scale rather than on two independent means.
+#'
+#' @param r Per-seed ratios.
+#' @return A list of `mean`, `lo`, `hi`.
+.ratio_interval <- function(r) {
+  r <- r[is.finite(r)]
+  if (length(r) < 2L || stats::sd(r) == 0) {
+    return(list(mean = if (length(r) > 0L) mean(r) else NA_real_,
+                lo = NA_real_, hi = NA_real_))
+  }
+  ci <- as.numeric(stats::t.test(r)$conf.int)
+  list(mean = mean(r), lo = ci[[1]], hi = ci[[2]])
+}
+
+#' Every arm as a point in the posted family's own plane.
+#'
+#' Per cell the posted levels trace a curve of realised welfare against
+#' admitted volume and against realised median latency. Every other arm is one
+#' point in that plane, and the two matched columns divide its welfare by the
+#' posted curve read at its own volume and at its own latency, seed by seed.
+#' The posted rows carry no matched column: the family is the reference.
+#'
+#' @param raw_df    Per-seed node results.
+#' @param cell_vars The variables a comparison is made inside.
+#' @return One row per cell, mechanism and posted level.
+node_frontier_table <- function(raw_df,
+                                cell_vars = c("graph_type", "load_level",
+                                              "architecture")) {
+  cols <- c("tokens_admitted", "median_latency", "welfare", "arm_exact_ratio")
+  stopifnot(all(c(cell_vars, "mechanism", "p_post_k", "seed", cols) %in%
+                  names(raw_df)))
+  df <- raw_df %>%
+    select(all_of(c(cell_vars, "mechanism", "p_post_k", "seed", cols))) %>%
+    rename(alloc_ratio = "arm_exact_ratio")
+
+  curves <- df %>%
+    filter(mechanism == "posted_price") %>%
+    group_by(across(all_of(c(cell_vars, "seed")))) %>%
+    summarise(curve = list(tibble(v = tokens_admitted,
+                                  l = median_latency,
+                                  w = welfare)),
+              .groups = "drop")
+
+  read_at <- function(curve, xout, on) {
+    purrr::map2_dbl(curve, xout, function(cv, x)
+      if (is.null(cv)) NA_real_ else .curve_at(cv[[on]], cv$w, x))
+  }
+  points <- df %>%
+    filter(mechanism != "posted_price") %>%
+    left_join(curves, by = c(cell_vars, "seed")) %>%
+    mutate(r_volume  = welfare / read_at(curve, tokens_admitted, "v"),
+           r_latency = welfare / read_at(curve, median_latency, "l")) %>%
+    select(-curve)
+
+  bind_rows(points, df %>% filter(mechanism == "posted_price") %>%
+              mutate(r_volume = NA_real_, r_latency = NA_real_)) %>%
+    group_by(across(all_of(c(cell_vars, "mechanism", "p_post_k")))) %>%
+    summarise(
+      n_seeds         = dplyr::n(),
+      tokens_admitted = mean(tokens_admitted, na.rm = TRUE),
+      median_latency  = mean(median_latency, na.rm = TRUE),
+      welfare         = mean(welfare, na.rm = TRUE),
+      alloc_ratio     = mean(alloc_ratio, na.rm = TRUE),
+      welfare_vs_posted_at_matched_volume     = .ratio_interval(r_volume)$mean,
+      welfare_vs_posted_at_matched_volume_lo  = .ratio_interval(r_volume)$lo,
+      welfare_vs_posted_at_matched_volume_hi  = .ratio_interval(r_volume)$hi,
+      welfare_vs_posted_at_matched_latency    = .ratio_interval(r_latency)$mean,
+      welfare_vs_posted_at_matched_latency_lo = .ratio_interval(r_latency)$lo,
+      welfare_vs_posted_at_matched_latency_hi = .ratio_interval(r_latency)$hi,
+      .groups = "drop")
+}
+
+
+# ===========================================================================
 # The onset law: the first node crossing
 # ===========================================================================
 
