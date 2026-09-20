@@ -994,6 +994,8 @@ list(
       N                = node_agent_counts[[node_exp6_sensitivity_grid$graph_type]],
       mechanism        = node_exp6_sensitivity_grid$mechanism,
       p_post_k         = node_exp6_sensitivity_grid$p_post_k,
+      architecture     = node_eval_architecture(
+                           node_exp6_sensitivity_grid$architecture),
       alpha            = node_exp6_sensitivity_grid$alpha,
       exec_clamp       = node_exp6_sensitivity_grid$exec_clamp,
       queue_coef       = node_exp6_sensitivity_grid$queue_coef,

@@ -89,8 +89,25 @@ test_that("the sweep runs four mechanisms on three instances at high load", {
   expect_setequal(g$p_post_k[g$mechanism == "posted_price"], 2)
   expect_setequal(g$graph_type, c("tree", "sp", "entangled"))
   expect_setequal(g$load_level, "high")
-  expect_equal(nrow(g), nrow(node_sensitivity_settings()) * 4L * 3L * 5L)
-  expect_equal(nrow(g), 480L)
+  expect_equal(nrow(g), nrow(node_sensitivity_settings()) * 4L * 3L * 2L * 5L)
+  expect_equal(nrow(g), 960L)
+})
+
+test_that("the sweep runs the uncontracted and the contracted arm at every setting", {
+  # A sensitivity taken on one architecture says nothing about whether the
+  # ordering it reports survives the contraction, which is the other factor
+  # the mechanism block crosses.
+  g <- node_sensitivity_grid(seeds = 1:5)
+  expect_setequal(g$architecture, c("naive", "hybrid_noema"))
+  expect_true(all(table(g$setting, g$architecture) > 0))
+  # The grid emits driver levels, so the mapping the mechanism block applies
+  # is the identity on them.
+  expect_identical(node_eval_architecture(g$architecture), g$architecture)
+
+  src <- paste(readLines(here::here("_targets.R")), collapse = " ")
+  expect_true(grepl(
+    "node_eval_architecture\\(\\s*node_exp6_sensitivity_grid\\$architecture\\)",
+    src))
 })
 
 test_that("the pipeline carries the sweep as its own target", {

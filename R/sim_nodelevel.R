@@ -1874,6 +1874,10 @@ node_sensitivity_grid <- function(seeds = 1:5) {
                  p_post_k  = c(1, 1, 2, 1))
   tidyr::expand_grid(node_sensitivity_settings(), arms,
                      graph_type = c("tree", "sp", "entangled"),
+                     # Both arms of the interface factor: a sensitivity taken
+                     # on the uncontracted one alone says nothing about
+                     # whether the ordering survives the contraction.
+                     architecture = c("naive", "hybrid_noema"),
                      load_level = "high", seed = seeds)
 }
 
