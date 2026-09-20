@@ -1484,6 +1484,50 @@ node_metrics <- function() {
     "price_volatility_cleared")
 }
 
+#' A measured table in the shape the machine-written report harvests.
+#'
+#' The report collects frames named `statistics` under a cell, and the
+#' supplement's numbers are transcribed from it. A frontier point, a tuned
+#' comparison and a sensitivity cell are measurements rather than tests, so
+#' each carries its statistic and the seeds behind it, and no p-value: the
+#' onset law and the regret standard errors already take that shape.
+#'
+#' The group a number belongs to travels in the cell label, since that is what
+#' the report keeps; `group_var` names the factor the label varies over.
+#'
+#' @param df        A measured table.
+#' @param metrics   Columns to report, skipping any the table lacks.
+#' @param group_var The factor whose level the cell label ends with.
+#' @param cell_vars The variables the label begins with.
+#' @param n_col     Column holding the observations behind each number.
+#' @return A named list of per-cell `statistics` frames.
+node_stats_rows <- function(df, metrics, group_var,
+                            cell_vars = c("graph_type", "load_level",
+                                          "architecture"),
+                            n_col = NULL) {
+  metrics   <- intersect(metrics, names(df))
+  cell_vars <- intersect(cell_vars, names(df))
+  labels <- do.call(paste, c(lapply(c(cell_vars, group_var),
+                                    function(v) as.character(df[[v]])),
+                             sep = "_"))
+  lapply(split(seq_len(nrow(df)), labels), function(i) {
+    d <- df[i, , drop = FALSE]
+    list(statistics = tibble(
+      metric    = rep(metrics, each = nrow(d)),
+      group_var = group_var,
+      statistic = as.numeric(unlist(lapply(metrics, function(m) d[[m]]))),
+      df        = NA_integer_,
+      n         = if (is.null(n_col)) NA_integer_
+                  else as.integer(rep(d[[n_col]], length(metrics))),
+      p_value   = NA_real_,
+      # The tripwire is a range check on a Kruskal-Wallis H against its n. A
+      # measured table has no such check, and NA says so rather than claiming
+      # a check that never ran.
+      tripwire_ok = NA))
+  })
+}
+
+
 #' Per-cell summary of one factor over the node responses.
 #'
 #' The shape stat_exp1 and stat_exp4 produce, over the columns a node row

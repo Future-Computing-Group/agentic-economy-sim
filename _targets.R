@@ -1121,7 +1121,29 @@ list(
     exp4 = node_stats_exp4, exp4_factorial = node_stats_exp4_factorial,
     exp5 = node_stats_exp5, exp6 = node_stats_exp6,
     exp10 = node_stats_exp10,
-    exp7a = node_stats_exp7a, exp7b = node_stats_exp7b))),
+    exp7a = node_stats_exp7a, exp7b = node_stats_exp7b,
+    # The measured tables of the mechanism block, transcribed in the same
+    # shape: a statistic, the seeds behind it, and no test.
+    exp6_frontier = node_stats_rows(
+      node_exp6_frontier,
+      c("welfare", "tokens_admitted", "median_latency", "alloc_ratio",
+        "welfare_vs_posted_at_matched_volume",
+        "welfare_vs_posted_at_matched_latency"),
+      "mechanism", n_col = "n_seeds"),
+    exp6_tuned = node_stats_rows(
+      node_exp6_tuned,
+      c("welfare", "tokens_admitted", "median_latency", "welfare_over_optimum",
+        "p_post_k", "reserve_markup"),
+      "mechanism", n_col = "n_eval_seeds"),
+    # Averaged over its seeds first, so a cell of the sweep is one number per
+    # response rather than one per seed.
+    exp6_sensitivity = node_stats_rows(
+      node_aggregate(node_exp6_sensitivity,
+                     c("setting", "graph_type", "load_level", "architecture",
+                       "mechanism")),
+      c("welfare", "welfare_over_optimum", "tokens_admitted"),
+      "mechanism",
+      cell_vars = c("setting", "graph_type", "load_level", "architecture"))))),
   tar_target(
     node_stats_report_file,
     {
