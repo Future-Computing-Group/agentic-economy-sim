@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite the accompanying paper (see preferred-citation) and the software via its Zenodo DOI."
-title: "Simulation code for \"Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum\""
+title: "Simulation code for \"Agentic Service Markets Across the Computing Continuum: A Polymatroidal Architecture\""
 type: software
-version: v2.0.1
+version: v2.1.0
 doi: 10.5281/zenodo.21041130
 license: MIT
 repository-code: "https://github.com/Future-Computing-Group/agentic-economy-sim"
@@ -40,7 +40,7 @@ authors:
     affiliation: "ICREA Barcelona, Spain; TU Wien, Austria"
 preferred-citation:
   type: article
-  title: "Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum"
+  title: "Agentic Service Markets Across the Computing Continuum: A Polymatroidal Architecture"
   year: 2026
   notes: "arXiv preprint"
   url: "https://arxiv.org/abs/2603.05614"

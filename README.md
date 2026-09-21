@@ -1,8 +1,8 @@
-# Simulation Code for: Real-Time AI Service Economy
+# Simulation Code for: Agentic Service Markets Across the Computing Continuum
 
 Simulation study for the paper:
 
-> **Real-Time AI Service Economy: A Framework for Agentic Computing Across the Continuum**
+> **Agentic Service Markets Across the Computing Continuum: A Polymatroidal Architecture**
 > Preprint: arXiv:2603.05614.
 
 ## Research context
