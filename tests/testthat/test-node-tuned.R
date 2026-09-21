@@ -72,10 +72,11 @@ test_that("the tuning grid gives each mechanism one knob and no other freedom", 
   expect_setequal(unique(g$reserve_markup[g$mechanism == "market"]),
                   node_reserve_markups())
   expect_setequal(unique(g$reserve_markup[g$mechanism == "posted_price"]), 1)
-  # Twelve cells: three instances, two loads, two architectures.
+  # Twelve cells: three instances, two loads, two architectures; each at both
+  # congestion levels.
   expect_equal(nrow(g),
                (length(node_posted_levels()) + 2 * length(node_reserve_markups())) *
-                 12 * 2)
+                 12 * 2 * 2)
 })
 
 # A tuning frame whose argmax is known by construction: the posted price peaks

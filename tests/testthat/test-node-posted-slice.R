@@ -109,6 +109,7 @@ test_that("the mixed arm is a grid level on the contracted architecture only", {
   rows <- g[g$mechanism == "market_posted_slice", ]
   expect_setequal(rows$architecture, "hybrid")
   expect_setequal(rows$p_post_k, c(1, 2))
-  expect_equal(nrow(rows), 2L * 3L * 2L * 10L)
+  # Two markups, three instances, two loads, two congestion levels.
+  expect_equal(nrow(rows), 2L * 3L * 2L * 2L * 10L)
   expect_false("market_posted_slice" %in% exp6_mechanism_grid(n_seeds = 2L)$mechanism)
 })

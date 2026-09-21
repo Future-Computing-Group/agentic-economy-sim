@@ -830,10 +830,12 @@ list(
       p_post_k         = node_exp6_param_grid$p_post_k,
       architecture     = ifelse(node_exp6_param_grid$architecture == "hybrid",
                                 "hybrid_noema", "naive"),
+      exec_clamp       = node_exp6_param_grid$exec_clamp,
+      queue_coef       = node_exp6_param_grid$queue_coef,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
-    ),
+    ) %>% dplyr::mutate(congestion = node_exp6_param_grid$congestion),
     pattern   = map(node_exp6_param_grid),
     iteration = "vector"
   ),
@@ -866,10 +868,12 @@ list(
       reserve_markup   = node_exp6_tuning_grid$reserve_markup,
       architecture     = ifelse(node_exp6_tuning_grid$architecture == "hybrid",
                                 "hybrid_noema", "naive"),
+      exec_clamp       = node_exp6_tuning_grid$exec_clamp,
+      queue_coef       = node_exp6_tuning_grid$queue_coef,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
-    ),
+    ) %>% dplyr::mutate(congestion = node_exp6_tuning_grid$congestion),
     pattern   = map(node_exp6_tuning_grid),
     iteration = "vector"
   ),
@@ -887,10 +891,12 @@ list(
       p_post_k         = node_exp6_eval_grid$p_post_k,
       reserve_markup   = node_exp6_eval_grid$reserve_markup,
       architecture     = node_eval_architecture(node_exp6_eval_grid$architecture),
+      exec_clamp       = node_exp6_eval_grid$exec_clamp,
+      queue_coef       = node_exp6_eval_grid$queue_coef,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
-    ),
+    ) %>% dplyr::mutate(congestion = node_exp6_eval_grid$congestion),
     pattern   = map(node_exp6_eval_grid),
     iteration = "vector"
   ),

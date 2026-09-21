@@ -56,6 +56,9 @@ test_that("the matched level runs at the markups the ordering is reported at", {
   g <- node_exp6_mechanism_grid(n_seeds = 10L)
   expect_setequal(unique(g$p_post_k[g$mechanism == "posted_price_matched"]),
                   c(1, 2, 4))
-  expect_equal(sum(g$mechanism == "posted_price_matched"), 3L * 3L * 2L * 2L * 10L)
+  # Three markups, three instances, two loads, two architectures, two
+  # congestion levels.
+  expect_equal(sum(g$mechanism == "posted_price_matched"),
+               3L * 3L * 2L * 2L * 2L * 10L)
   expect_false("posted_price_matched" %in% exp6_mechanism_grid(n_seeds = 2L)$mechanism)
 })

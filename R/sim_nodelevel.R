@@ -1601,6 +1601,21 @@ node_matched_anchor <- function(k = 1, reference = "tree") {
   k * min(posted_price_anchor_per_leaf(env, env$anc, k = 1))
 }
 
+#' The two congestion levels the mechanism block is reported at.
+#'
+#' The queue term the arms are compared under is a parameter, and one of its
+#' settings has an outside measurement behind it. Both come from the sweep's
+#' own rows rather than from a second copy of the numbers, so the level and
+#' the sensitivity cell can never drift apart.
+#'
+#' @return One row per level: its name and the queue term it sets.
+node_congestion_levels <- function() {
+  s <- node_sensitivity_settings()
+  s[match(c("baseline", "calibrated"), s$setting),
+    c("setting", "exec_clamp", "queue_coef")] %>%
+    rename(congestion = "setting")
+}
+
 #' The node substrate's own mechanism grid.
 #'
 #' Its own function rather than a level added to the per-tier one: the two
@@ -1622,7 +1637,7 @@ node_exp6_mechanism_grid <- function(n_seeds) {
     # the three markups the cross-instance ordering is reported at.
     tidyr::expand_grid(mechanism = "posted_price_matched",
                        p_post_k  = c(1, 2, 4)))
-  bind_rows(
+  rows <- bind_rows(
     tidyr::expand_grid(
       arms,
       graph_type   = c("tree", "sp", "entangled"),
@@ -1638,6 +1653,9 @@ node_exp6_mechanism_grid <- function(n_seeds) {
       load_level   = c("medium", "high"),
       architecture = "hybrid",
       seed         = seq_len(n_seeds)))
+  # Every arm at both congestion levels: the comparison and the level it is
+  # read at are one measurement, not a headline and a footnote.
+  tidyr::expand_grid(rows, node_congestion_levels())
 }
 
 #' Linear interpolation of a measured curve, with no extrapolation.
@@ -1688,8 +1706,9 @@ node_exp6_mechanism_grid <- function(n_seeds) {
 #' @param cell_vars The variables a comparison is made inside.
 #' @return One row per cell, mechanism and posted level.
 node_frontier_table <- function(raw_df,
-                                cell_vars = c("graph_type", "load_level",
-                                              "architecture")) {
+                                cell_vars = intersect(
+                                  c("graph_type", "load_level", "architecture",
+                                    "congestion"), names(raw_df))) {
   cols <- c("tokens_admitted", "median_latency", "welfare", "alloc_ratio_true")
   stopifnot(all(c(cell_vars, "mechanism", "p_post_k", "seed", cols) %in%
                   names(raw_df)))
@@ -1772,7 +1791,8 @@ node_tuning_grid <- function(seeds) {
     graph_type   = c("tree", "sp", "entangled"),
     load_level   = c("medium", "high"),
     architecture = c("naive", "hybrid"),
-    seed         = seeds)
+    seed         = seeds,
+    node_congestion_levels())
 }
 
 #' The grid the tuned mechanisms are reported on.
@@ -1787,8 +1807,9 @@ node_tuning_grid <- function(seeds) {
 #' @param fixed      Mechanisms with nothing to tune.
 #' @return A tibble with one row per branch.
 node_eval_grid <- function(tuning_raw, seeds,
-                           cell_vars = c("graph_type", "load_level",
-                                         "architecture"),
+                           cell_vars = intersect(
+                             c("graph_type", "load_level", "architecture",
+                               "congestion"), names(tuning_raw)),
                            fixed = c("greedy_ev", "k8s")) {
   knobs <- tuning_raw %>%
     group_by(across(all_of(c(cell_vars, "mechanism", "p_post_k",
@@ -1801,7 +1822,13 @@ node_eval_grid <- function(tuning_raw, seeds,
   rest <- tidyr::expand_grid(distinct(tuning_raw, across(all_of(cell_vars))),
                              mechanism = fixed, p_post_k = 1,
                              reserve_markup = 1)
-  tidyr::expand_grid(bind_rows(knobs, rest), seed = seeds)
+  out <- tidyr::expand_grid(bind_rows(knobs, rest), seed = seeds)
+  # The level names the queue term every row runs at, so a row can never
+  # carry a setting its own level does not name.
+  if ("congestion" %in% names(out)) {
+    out <- left_join(out, node_congestion_levels(), by = "congestion")
+  }
+  out
 }
 
 #' The one value a column takes inside a cell.
@@ -1837,8 +1864,9 @@ node_eval_architecture <- function(x) {
 #' @param cell_vars The variables a knob was chosen inside.
 #' @return One row per cell and mechanism.
 node_tuned_table <- function(eval_raw,
-                             cell_vars = c("graph_type", "load_level",
-                                           "architecture")) {
+                             cell_vars = intersect(
+                               c("graph_type", "load_level", "architecture",
+                                 "congestion"), names(eval_raw))) {
   eval_raw %>%
     group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
     summarise(p_post_k             = .one_of(p_post_k),

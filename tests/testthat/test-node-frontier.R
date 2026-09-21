@@ -19,7 +19,8 @@ test_that("the node mechanism grid refines the posted levels and leaves the per-
   # The level travels with the arms that post a price: crossing it with the
   # others would run each of them nine times under a price it never posts.
   expect_setequal(unique(g$p_post_k[!grepl("posted", g$mechanism)]), 1)
-  expect_equal(sum(g$mechanism == "k8s"), 3L * 2L * 2L * 10L)
+  # Three instances, two loads, two architectures, two congestion levels.
+  expect_equal(sum(g$mechanism == "k8s"), 3L * 2L * 2L * 2L * 10L)
   # The three levels the existing rows were run at are still in the grid, so
   # those rows reproduce.
   expect_true(all(c(1, 2, 4) %in% g$p_post_k))
