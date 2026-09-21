@@ -113,7 +113,7 @@ test_that("the evaluation grid runs each mechanism at its tuning-set argmax", {
 test_that("the tuned table reports the evaluation numbers at the chosen knob", {
   eval_raw <- node_eval_grid(.tuning_fixture(), c(11L, 12L)) %>%
     dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50, median_latency = 200,
-                  welfare_over_optimum = 0.4)
+                  welfare_over_optimum = 0.4, alloc_ratio_true = 0.6)
   tuned <- node_tuned_table(eval_raw)
 
   expect_equal(nrow(tuned), 10L)
@@ -121,10 +121,47 @@ test_that("the tuned table reports the evaluation numbers at the chosen knob", {
                   c("graph_type", "load_level", "architecture", "mechanism",
                     "p_post_k", "reserve_markup", "n_eval_seeds", "welfare",
                     "tokens_admitted", "median_latency", "welfare_over_optimum",
-                    "knob_at_boundary", "knob_flat"))
+                    "knob_at_boundary", "knob_flat", "alloc_ratio_true"))
   expect_true(all(tuned$n_eval_seeds == 2L))
   expect_true(all(tuned$welfare == 21.5))
   expect_equal(tuned$p_post_k[tuned$mechanism == "posted_price"], c(1.5, 1.5))
+})
+
+test_that("the tuned table carries the allocative ratio, averaged like welfare_over_optimum", {
+  # Known per-seed alloc_ratio_true and welfare_over_ceiling values, so the
+  # cell mean is checkable by hand; the two seeds are the evaluation seeds
+  # .tuning_fixture()'s grid is scored on.
+  eval_raw <- node_eval_grid(.tuning_fixture(), c(11L, 12L)) %>%
+    dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50, median_latency = 200,
+                  welfare_over_optimum = 0.4,
+                  alloc_ratio_true = ifelse(seed == 11L, 0.6, 0.8),
+                  welfare_over_ceiling = ifelse(seed == 11L, 0.3, 0.5))
+  tuned <- node_tuned_table(eval_raw)
+
+  # Appended at the end, after every column the table already reported.
+  expect_equal(names(tuned)[(ncol(tuned) - 1):ncol(tuned)],
+               c("alloc_ratio_true", "welfare_over_ceiling"))
+  # Existing columns keep their positions and values.
+  expect_equal(names(tuned)[seq_len(ncol(tuned) - 2L)],
+               c("graph_type", "load_level", "architecture", "mechanism",
+                 "p_post_k", "reserve_markup", "n_eval_seeds", "welfare",
+                 "tokens_admitted", "median_latency", "welfare_over_optimum",
+                 "knob_at_boundary", "knob_flat"))
+  expect_true(all(tuned$welfare == 21.5))
+  expect_true(all(tuned$welfare_over_optimum == 0.4))
+  # mean(0.6, 0.8) and mean(0.3, 0.5), exactly as welfare_over_optimum's mean.
+  expect_true(all(tuned$alloc_ratio_true == 0.7))
+  expect_true(all(tuned$welfare_over_ceiling == 0.4))
+})
+
+test_that("welfare_over_ceiling is skipped when the eval rows don't carry it", {
+  eval_raw <- node_eval_grid(.tuning_fixture(), c(11L, 12L)) %>%
+    dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50, median_latency = 200,
+                  welfare_over_optimum = 0.4, alloc_ratio_true = 0.7)
+  tuned <- node_tuned_table(eval_raw)
+
+  expect_false("welfare_over_ceiling" %in% names(tuned))
+  expect_equal(names(tuned)[ncol(tuned)], "alloc_ratio_true")
 })
 
 test_that("the pipeline carries the tuned block as its own targets", {
@@ -219,7 +256,8 @@ test_that("a posted level below one posts a lower price", {
   tidyr::expand_grid(graph_type = "tree", load_level = "high",
                      architecture = "naive", knobs, seed = 11:12) %>%
     dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50,
-                  median_latency = 200, welfare_over_optimum = 0.4)
+                  median_latency = 200, welfare_over_optimum = 0.4,
+                  alloc_ratio_true = 0.4)
 }
 
 test_that("the tuned table says whether the chosen knob sat on the grid's edge", {
@@ -232,7 +270,8 @@ test_that("the tuned table says whether the chosen knob sat on the grid's edge",
   # An arm with nothing to tune has no edge to sit on.
   expect_false(at[["k8s"]])
   # The column is appended; every column the table already reported is intact.
-  expect_equal(names(tuned)[ncol(tuned) - 1L], "knob_at_boundary")
+  expect_equal(names(tuned)[(ncol(tuned) - 2L):ncol(tuned)],
+               c("knob_at_boundary", "knob_flat", "alloc_ratio_true"))
   expect_true(all(tuned$welfare == 21.5))
 })
 
@@ -261,7 +300,8 @@ test_that("the tuned table says whether the chosen knob sat on the grid's edge",
   node_eval_grid(tuning_raw, c(11L, 12L)) %>%
     dplyr::filter(mechanism == "posted_price") %>%
     dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50,
-                  median_latency = 200, welfare_over_optimum = 0.4)
+                  median_latency = 200, welfare_over_optimum = 0.4,
+                  alloc_ratio_true = 0.4)
 }
 
 test_that("the tuned table says whether the tuning welfare was flat there", {
@@ -276,8 +316,8 @@ test_that("the tuned table says whether the tuning welfare was flat there", {
   expect_true(flat[["tree"]])
   expect_false(flat[["sp"]])
   # Appended after the flag it qualifies; every column before it is intact.
-  expect_equal(names(tuned)[(ncol(tuned) - 1):ncol(tuned)],
-               c("knob_at_boundary", "knob_flat"))
+  expect_equal(names(tuned)[(ncol(tuned) - 2L):ncol(tuned)],
+               c("knob_at_boundary", "knob_flat", "alloc_ratio_true"))
 })
 
 # Whether the welfare beside a knob moved is a question about seeds, and a

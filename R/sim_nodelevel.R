@@ -2040,7 +2040,11 @@ node_knob_flat <- function(tuned, tuning_raw, cell_vars) {
 #' already reported, so a caller that reads it by name keeps reading what it
 #' read before. The flatness is read off the tuning frame the knob was chosen
 #' on, so a caller with no such frame gets NA there rather than a response
-#' that was never measured.
+#' that was never measured. `alloc_ratio_true` and `welfare_over_ceiling` are
+#' appended after that, averaged over the evaluation seeds exactly as
+#' `welfare_over_optimum` is; `welfare_over_ceiling` is left off entirely
+#' where the eval rows don't carry it, rather than reporting a mean that was
+#' never measured.
 #'
 #' @param eval_raw   Per-seed results of the evaluation grid.
 #' @param tuning_raw Per-seed results of the tuning grid, or NULL.
@@ -2050,6 +2054,7 @@ node_tuned_table <- function(eval_raw, tuning_raw = NULL,
                              cell_vars = intersect(
                                c("graph_type", "load_level", "architecture",
                                  "congestion"), names(eval_raw))) {
+  has_ceiling <- "welfare_over_ceiling" %in% names(eval_raw)
   tuned <- eval_raw %>%
     group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
     summarise(p_post_k             = .one_of(p_post_k),
@@ -2059,11 +2064,16 @@ node_tuned_table <- function(eval_raw, tuning_raw = NULL,
               tokens_admitted      = mean(tokens_admitted, na.rm = TRUE),
               median_latency       = mean(median_latency, na.rm = TRUE),
               welfare_over_optimum = mean(welfare_over_optimum, na.rm = TRUE),
+              alloc_ratio_true     = mean(alloc_ratio_true, na.rm = TRUE),
+              welfare_over_ceiling = if (has_ceiling)
+                mean(welfare_over_ceiling, na.rm = TRUE) else NA_real_,
               .groups = "drop") %>%
     mutate(knob_at_boundary = node_knob_at_boundary(mechanism, p_post_k,
                                                     reserve_markup))
   tuned$knob_flat <- node_knob_flat(tuned, tuning_raw, cell_vars)
-  tuned
+  if (!has_ceiling) tuned$welfare_over_ceiling <- NULL
+  dplyr::relocate(tuned, alloc_ratio_true, dplyr::any_of("welfare_over_ceiling"),
+                  .after = knob_flat)
 }
 
 
