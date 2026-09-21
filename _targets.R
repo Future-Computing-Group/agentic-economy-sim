@@ -922,6 +922,7 @@ list(
       load_level       = "high",
       N                = node_agent_counts[[node_exp6_convergence_grid$graph_type]],
       seed             = node_exp6_convergence_grid$seed,
+      leaf_mix         = node_exp6_convergence_grid$leaf_mix,
       iters            = node_exp6_convergence_grid$iters,
       save_profile     = node_exp6_convergence_grid$save_profile,
       n_rounds         = 20L,
@@ -944,6 +945,7 @@ list(
       load_level       = "high",
       N                = node_agent_counts[[node_exp6_determinacy_grid$graph_type]],
       seed             = node_exp6_determinacy_grid$seed,
+      leaf_mix         = node_exp6_determinacy_grid$leaf_mix,
       n_rounds         = 20L,
       iters            = 1000L,
       deadlines        = task_deadlines,
@@ -964,6 +966,7 @@ list(
       load_level       = "high",
       N                = node_agent_counts[[node_exp6_report_stability_grid$graph_type]],
       seed             = node_exp6_report_stability_grid$seed,
+      leaf_mix         = node_exp6_report_stability_grid$leaf_mix,
       n_rounds         = 20L,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
@@ -986,6 +989,7 @@ list(
       load_level       = "high",
       N                = node_agent_counts[[node_exp6_shock_grid$graph_type]],
       seed             = node_exp6_shock_grid$seed,
+      leaf_mix         = node_exp6_shock_grid$leaf_mix,
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda

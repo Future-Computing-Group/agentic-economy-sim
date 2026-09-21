@@ -66,6 +66,7 @@ test_that("the summary reports the reshuffles beyond an exchange", {
   rows <- tidyr::expand_grid(graph_type = c("tree", "entangled"),
                              step = c(-0.01, 0.01), round = 1:5) %>%
     dplyr::mutate(seed = 1L, task_id = "t", n_admitted = 50,
+                  leaf_mix = "uniform",
                   own_changed = TRUE, welfare_delta = 0.5,
                   hamming = ifelse(graph_type == "entangled" & round > 3, 6, 2),
                   hamming_fixed = 2, own_changed_fixed = TRUE,
@@ -80,7 +81,9 @@ test_that("the summary reports the reshuffles beyond an exchange", {
 test_that("the sweep runs three instances over the pipeline's seeds", {
   g <- node_report_stability_grid(n_seeds = 10L)
   expect_setequal(g$graph_type, c("tree", "sp", "entangled"))
-  expect_equal(nrow(g), 3L * 10L)
+  # Three instances over ten seeds, at each of the two leaf mixes.
+  expect_equal(sum(g$leaf_mix == "uniform"), 3L * 10L)
+  expect_equal(nrow(g), 2L * 3L * 10L)
 })
 
 test_that("the pipeline carries the stability block as its own targets", {
@@ -112,6 +115,7 @@ test_that("the fixed-price re-pack is reported beside the re-clear", {
                c("graph_type", "load_level", "N", "seed", "round", "task_id",
                  "step", "n_admitted", "hamming", "own_changed",
                  "welfare_delta", "hamming_fixed"))
+  expect_setequal(rows$leaf_mix, "uniform")
   expect_true(all(rows$hamming_fixed >= 0))
   expect_true(all(rows$hamming_fixed == round(rows$hamming_fixed)))
   expect_true(all(rows$hamming_fixed <= rows$n_admitted + 1))
@@ -143,6 +147,7 @@ test_that("the summary carries the fixed-price responses beside the re-clear's",
   rows <- tidyr::expand_grid(graph_type = c("tree", "entangled"),
                              step = c(-0.01, 0.01), round = 1:5) %>%
     dplyr::mutate(seed = 1L, task_id = "t", n_admitted = 50,
+                  leaf_mix = "uniform",
                   own_changed = TRUE, welfare_delta = 0.5,
                   hamming = ifelse(graph_type == "entangled" & round > 3, 6, 2),
                   hamming_fixed = ifelse(graph_type == "entangled" & round > 4,
@@ -151,9 +156,9 @@ test_that("the summary carries the fixed-price responses beside the re-clear's",
                   welfare_delta_fixed = -0.25)
   s <- node_report_stability_summary(rows)
 
-  expect_equal(names(s)[1:7],
-               c("graph_type", "step", "n", "hamming_worst", "beyond_exchange",
-                 "own_changed", "welfare_delta"))
+  expect_equal(names(s)[1:8],
+               c("graph_type", "step", "leaf_mix", "n", "hamming_worst",
+                 "beyond_exchange", "own_changed", "welfare_delta"))
   expect_equal(s$hamming_fixed_worst[s$graph_type == "tree"], c(2, 2))
   expect_equal(s$hamming_fixed_worst[s$graph_type == "entangled"], c(4, 4))
   expect_equal(s$beyond_exchange_fixed[s$graph_type == "tree"], c(0, 0))

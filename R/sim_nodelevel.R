@@ -2154,9 +2154,33 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
         if (save_profile && !ok)
           tibble(tier = names(capv), demand = unname(demand),
                  capacity = unname(capv), price = unname(prices))
-        else NULL))
+        else NULL),
+      # Appended: the mix the round was drawn under, so a summary can never
+      # attribute a round to a mix it did not run.
+      leaf_mix = leaf_mix)
   }
   bind_rows(rows)
+}
+
+#' The same grid at the skewed leaf mix as well.
+#'
+#' The uniform mix spreads the arrivals evenly over the leaves, so no node is
+#' fed much harder than its own capacity and every question the battery asks is
+#' asked in the easiest instance the substrate has. The skewed mix is the one
+#' the onset law says crosses first.
+#'
+#' Only the bidirectional arm runs there. The ascending rule's rows answer an
+#' existence question stated for that rule on the instance it was stated on,
+#' and a second mix under the same name would answer a different one.
+#'
+#' The uniform rows keep their exact definitions and the skewed rows are bound
+#' below them, so the grid reads as an extension of what it was.
+#'
+#' @param g A grid whose rows all ran at the uniform mix.
+#' @return The same rows, plus the skewed ones.
+.node_both_leaf_mixes <- function(g) {
+  skewed <- if ("mechanism" %in% names(g)) filter(g, mechanism == "market") else g
+  bind_rows(mutate(g, leaf_mix = "uniform"), mutate(skewed, leaf_mix = "skewed"))
 }
 
 #' The grid the convergence block branches over.
@@ -2170,7 +2194,8 @@ node_convergence_grid <- function(n_seeds) {
                      seed = seq_len(n_seeds), iters = budgets) %>%
     # The profiles are kept where non-existence would show: the crossing
     # instance, at the budget beyond which nothing further will converge.
-    mutate(save_profile = graph_type == "entangled" & iters == max(budgets))
+    mutate(save_profile = graph_type == "entangled" & iters == max(budgets)) %>%
+    .node_both_leaf_mixes()
 }
 
 #' The share of rounds that reached an equilibrium, per instance and budget.
@@ -2179,7 +2204,7 @@ node_convergence_grid <- function(n_seeds) {
 #' @return One row per instance and budget.
 node_convergence_summary <- function(rows) {
   rows %>%
-    group_by(graph_type, mechanism, iters) %>%
+    group_by(graph_type, mechanism, iters, leaf_mix) %>%
     summarise(n_rounds           = dplyr::n(),
               converged_fraction = mean(equilibrium_ok),
               resid_excess       = mean(resid_excess, na.rm = TRUE),
@@ -2322,7 +2347,8 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
       welfare_min  = min(welfare), welfare_max = max(welfare),
       welfare_carried = unname(welfare[["carried"]]),
       terminal_prices = list(bind_rows(lapply(names(from), function(nm)
-        mutate(from[[nm]]$prices, start = nm)))))
+        mutate(from[[nm]]$prices, start = nm)))),
+      leaf_mix = leaf_mix)
 
     # The round advances on the clearing the pipeline would have carried.
     cleared   <- from$carried$cleared
@@ -2345,7 +2371,8 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
 node_determinacy_grid <- function(n_seeds) {
   tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
                      mechanism = c("market", "market_asc"),
-                     seed = seq_len(n_seeds))
+                     seed = seq_len(n_seeds)) %>%
+    .node_both_leaf_mixes()
 }
 
 #' How often the start decided the price, per instance.
@@ -2354,7 +2381,7 @@ node_determinacy_grid <- function(n_seeds) {
 #' @return One row per instance.
 node_determinacy_summary <- function(rows) {
   rows %>%
-    group_by(graph_type, mechanism) %>%
+    group_by(graph_type, mechanism, leaf_mix) %>%
     summarise(n_rounds        = dplyr::n(),
               determinate     = mean(price_spread <= 1e-9),
               sets_agree      = mean(sets_agree),
@@ -2476,7 +2503,8 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
                # reading the re-clear's own responses.
                hamming_fixed = node_hamming(base_set, fixed_set),
                own_changed_fixed = (id %in% fixed_set) != (id %in% base_set),
-               welfare_delta_fixed = welfare_of(fixed) - base_w)
+               welfare_delta_fixed = welfare_of(fixed) - base_w,
+               leaf_mix = leaf_mix)
       }))
     }))
 
@@ -2497,8 +2525,11 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
 #' @param n_seeds Monte Carlo seeds per cell.
 #' @return A tibble with one row per branch.
 node_report_stability_grid <- function(n_seeds) {
+  # No mechanism column: the block clears the bidirectional market and nothing
+  # else, so both mixes run on every row.
   tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
-                     seed = seq_len(n_seeds))
+                     seed = seq_len(n_seeds)) %>%
+    .node_both_leaf_mixes()
 }
 
 #' How far a one-task move moved the round, per instance and step.
@@ -2513,7 +2544,7 @@ node_report_stability_grid <- function(n_seeds) {
 #' @return One row per instance and step.
 node_report_stability_summary <- function(rows) {
   rows %>%
-    group_by(graph_type, step) %>%
+    group_by(graph_type, step, leaf_mix) %>%
     # The reductions that read the per-perturbation column come before the one
     # that replaces it: a summary naming its own input would average an
     # average.
@@ -2699,7 +2730,7 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
   control <- one_run(FALSE)
   shocked %>%
     mutate(graph_type = graph_type, architecture = architecture, shock = shock,
-           mechanism = mechanism,
+           mechanism = mechanism, leaf_mix = leaf_mix,
            load_level = load_level, N = as.integer(N), seed = as.integer(seed),
            shock_start = as.integer(shock_start),
            admitted_control = control$admitted,
@@ -2709,7 +2740,7 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
            shock_start,
            round, in_shock, n_offered, n_offered_control, admitted,
            admitted_control, unit_cost, resid_excess, equilibrium_ok, welfare,
-           welfare_control)
+           welfare_control, leaf_mix)
 }
 
 #' The first round after the shock that stays settled.
@@ -2740,7 +2771,7 @@ node_rounds_to_resettle <- function(ok, from, hold = 5L) {
 #' @return One row per branch.
 node_shock_summary <- function(rows, hold = 5L, settled_tail = 25L) {
   rows %>%
-    group_by(graph_type, architecture, shock, mechanism, seed) %>%
+    group_by(graph_type, architecture, shock, mechanism, seed, leaf_mix) %>%
     summarise(
       n_rounds    = dplyr::n(),
       shock_start = dplyr::first(shock_start),
@@ -2770,7 +2801,8 @@ node_shock_grid <- function(n_seeds) {
                      architecture = c("naive", "hybrid_noema"),
                      shock        = c("capacity", "burst"),
                      mechanism    = c("market", "market_asc"),
-                     seed         = seq_len(n_seeds))
+                     seed         = seq_len(n_seeds)) %>%
+    .node_both_leaf_mixes()
 }
 
 
