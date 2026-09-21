@@ -1523,5 +1523,31 @@ list(
   tar_target(exp6_fig_tufte, { dir.create("fig/tufte", recursive = TRUE, showWarnings = FALSE)
     ggsave("fig/tufte/exp6_tufte.pdf", exp6_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
     ggsave("fig/tufte/exp6_tufte.png", exp6_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
-    "fig/tufte/exp6_tufte.pdf" }, format = "file")
+    "fig/tufte/exp6_tufte.pdf" }, format = "file"),
+
+  # ===========================================================================
+  # Figures: the node-level twins
+  # ===========================================================================
+  # Every target above reads a per-tier results target. The manuscript reports
+  # the node-level instances, so each data figure it includes gets a twin here
+  # that reads the node-level target of the same experiment and writes the same
+  # basename under fig/node/. The per-tier figures are left as they are.
+  tar_target(node_exp1_plot_tufte,
+             make_node_exp1_tufte(bind_rows(node_exp1_results_raw))),
+  tar_target(node_exp1_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp1_tufte.pdf", node_exp1_plot_tufte, width = 5.4, height = 2.0, dpi = fig_dpi)
+    ggsave("fig/node/exp1_tufte.png", node_exp1_plot_tufte, width = 5.4, height = 2.0, dpi = 200)
+    "fig/node/exp1_tufte.pdf" }, format = "file"),
+  tar_target(node_exp2_plot_tufte,
+             make_node_exp2_tufte(bind_rows(node_exp2_results_raw))),
+  tar_target(node_exp2_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp2_tufte.pdf", node_exp2_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/node/exp2_tufte.png", node_exp2_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/node/exp2_tufte.pdf" }, format = "file"),
+  tar_target(node_exp3_plot_tufte,
+             make_node_exp3_tufte(bind_rows(node_exp3_results_raw))),
+  tar_target(node_exp3_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp3_tufte.pdf", node_exp3_plot_tufte, width = fig_width, height = 3.4, dpi = fig_dpi)
+    ggsave("fig/node/exp3_tufte.png", node_exp3_plot_tufte, width = fig_width, height = 3.4, dpi = 200)
+    "fig/node/exp3_tufte.pdf" }, format = "file")
 )
