@@ -266,6 +266,59 @@ sweep_triangle_family <- function() {
 }
 
 
+#' The deployed O-RAN pipeline templates as one named family.
+#'
+#' The companion deployment runs three eight-stage pipeline templates
+#' concurrently over the same administrative domains, which is the sweep's
+#' structure in another vocabulary: a domain is a capacity node, a template is
+#' a leaf (a task is one execution of one template), and a template sits in a
+#' domain's block exactly when it has a stage there. The three templates
+#' compete for the same domains in the same window, so the domain's capacity is
+#' shared across them, which is what makes the blocks overlap at all.
+#'
+#' The translation, and what it rests on:
+#'
+#'   - Five domain nodes, at the granularity the templates name their stages
+#'     at: the distributed unit, the central unit, the near-real-time
+#'     controller, the non-real-time controller and the management and
+#'     orchestration plane. The deployment maps these onto four sites, the
+#'     central unit and the near-real-time controller sharing one; the
+#'     five-node reading is the finer of the two and the one the stage names
+#'     support, and the coarser reading merges two blocks that are equal here
+#'     anyway, so neither changes a predicate.
+#'   - The chain template names all eight of its stages and crosses all five
+#'     domains. The series-parallel template is four sources at the
+#'     distributed and central units converging on four stages at the
+#'     near-real-time controller; the entangled template fans out from a
+#'     central-unit stage to two near-real-time controller detectors with a
+#'     further central-unit stream and a distributed-unit-sourced stream. Both
+#'     therefore occupy the first three domains and neither reaches the
+#'     non-real-time controller or the management plane.
+#'   - A stage-level variant is NOT built. Only the chain template's eight
+#'     stages are individually named; the other two are described by their
+#'     structure and their stage counts, so a stage-level family would be a
+#'     guess at two thirds of its own leaves. The domain-level family is what
+#'     the source specifies.
+#'
+#' Capacities follow the generated instances' rule exactly, so the named row is
+#' read on the same scale as the strata.
+#'
+#' @param n_agents      Agent population the capacities are sized at.
+#' @param lambda        Arrivals per agent per round.
+#' @param bind_fraction Share of its block's expected demand a domain carries.
+#' @param leaf_fraction The same for a template's own singleton block.
+#' @return A family.
+sweep_npubsub_family <- function(n_agents = 90L, lambda = 1.5,
+                                 bind_fraction = 0.6, leaf_fraction = 1.5) {
+  leaves <- c("cqi_chain", "anomaly_sp", "ran_entangled")
+  blocks <- list(du = leaves, cu = leaves, near_rt_ric = leaves,
+                 non_rt_ric = "cqi_chain", smo = "cqi_chain")
+  sweep_family(leaves, blocks,
+               sweep_capacity(leaves, blocks, n_agents, lambda,
+                              bind_fraction, leaf_fraction))
+}
+
+
 # ---------------------------------------------------------------------------
 # Demand: the substrate's own generator, in matrix coordinates
 # ---------------------------------------------------------------------------
@@ -559,7 +612,9 @@ sweep_instances <- function(n_per_stratum = 20L, seed = 1L, max_draws = 8000L,
               "oddcycle_interval", "oddcycle_nonInterval")
   shipped <- sweep_substrate_families("small")
   named   <- c(list(triangle = sweep_triangle_family()),
-               setNames(shipped, paste0("substrate_", names(shipped))))
+               setNames(shipped, paste0("substrate_", names(shipped))),
+               list(npubsub_domains = sweep_npubsub_family(
+                 n_agents, lambda, bind_fraction, leaf_fraction)))
 
   fams  <- named
   count <- table(factor(vapply(named, function(f) f$stratum, character(1)),

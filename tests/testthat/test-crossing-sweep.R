@@ -179,3 +179,32 @@ test_that("a laminar family keeps its guarantees over a run", {
   expect_true(all(rows$integral))
   expect_true(all(rows$relative_gap < 1e-9))
 })
+
+
+# ---- the named instance ----------------------------------------------------
+
+test_that("the deployed pipeline templates translate to a laminar family", {
+  f <- sweep_npubsub_family()
+  expect_equal(f$leaves, c("cqi_chain", "anomaly_sp", "ran_entangled"))
+  expect_equal(f$internal,
+               c("du", "cu", "near_rt_ric", "non_rt_ric", "smo"))
+  # Three of the five domains carry a stage of all three templates and two
+  # carry a stage of the chain alone, so every pair of blocks is nested or
+  # equal: the family is laminar, and a clearing price exists for every round
+  # and every value vector on it.
+  expect_equal(f$crossing_count, 0L)
+  expect_true(f$crossing_graph_bipartite)
+  expect_true(f$interval_order)
+  expect_true(f$tu_verdict)
+  expect_equal(f$stratum, "laminar")
+
+  # The same fraction rule as the generated instances: an internal node at 0.6
+  # of the demand expected under its block, a leaf at 1.5 of its own.
+  expect_equal(unname(f$capacity[["du"]]), 81)
+  expect_equal(unname(f$capacity[["non_rt_ric"]]), 27)
+  expect_equal(unname(f$capacity[["cqi_chain"]]), 68)
+
+  rows <- sweep_run(f, instance = "npubsub_domains", stratum = f$stratum,
+                    leaf_mix = "uniform", seeds = 1L, n_rounds = 2L)
+  expect_true(all(rows$integral))
+})
