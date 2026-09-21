@@ -2401,7 +2401,9 @@ node_hamming <- function(a, b) {
 #' @param salvage          Value retained after a deadline miss.
 #' @param eta              Price step size.
 #' @param success_lr       Learning rate for the success model.
-#' @return One row per round, perturbed task and step.
+#' @return One row per round, perturbed task and step: the response of the
+#'   re-clear, and beside it the response of a re-pack at the base clearing's
+#'   terminal prices, which isolates the packing rule from the price process.
 node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
                                       load_level = "high", N = NULL, seed = 1L,
                                       n_rounds = 20L, n_tasks = 10L,
@@ -2443,6 +2445,18 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
       set.seed(seed * 7919L + t)
       sample(base_set, min(n_tasks, length(base_set)))
     }
+    # The same perturbation with the prices held still. The re-clear moves the
+    # admitted set and the price vector it is packed at together, and the
+    # matroidal bound is a statement about the packing rule alone. Zero
+    # tatonnement iterations from the base clearing's own terminal state is
+    # exactly that: the moved report flows into the expected values, the
+    # surplus is read at the prices the round cleared at, and the same kernel
+    # packs it -- no second price process to attribute the response to.
+    fixed_with <- function(tk) clear_multitier_market(
+      tk, env, bid$util_hat, bid$base_latency, base$market_state,
+      alpha = alpha, p = p, lambda_l_default = lambda_l_default,
+      salvage = salvage, iters = 0L, eta = eta)
+
     rows[[t]] <- bind_rows(lapply(picked, function(id) {
       bind_rows(lapply(steps, function(step) {
         moved <- tasks
@@ -2450,12 +2464,19 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
         moved$value_base[i] <- moved$value_base[i] * (1 + step)
         alt <- clear_with(moved)
         alt_set <- as.character(alt$allocation$task_id)
+        fixed     <- fixed_with(moved)
+        fixed_set <- as.character(fixed$allocation$task_id)
         tibble(graph_type = graph_type, load_level = load_level,
                N = as.integer(N), seed = as.integer(seed), round = t,
                task_id = id, step = step, n_admitted = length(base_set),
                hamming = node_hamming(base_set, alt_set),
                own_changed = (id %in% alt_set) != (id %in% base_set),
-               welfare_delta = welfare_of(alt) - base_w)
+               welfare_delta = welfare_of(alt) - base_w,
+               # Appended: a caller reading the columns it already read keeps
+               # reading the re-clear's own responses.
+               hamming_fixed = node_hamming(base_set, fixed_set),
+               own_changed_fixed = (id %in% fixed_set) != (id %in% base_set),
+               welfare_delta_fixed = welfare_of(fixed) - base_w)
       }))
     }))
 
@@ -2484,7 +2505,9 @@ node_report_stability_grid <- function(n_seeds) {
 #'
 #' `beyond_exchange` is the share of perturbations that moved more than the
 #' perturbed task and one exchange partner, which is the bound a matroidal
-#' region gives.
+#' region gives. The `_fixed` columns are the same readings on the re-pack at
+#' the base clearing's own prices, where the packing rule answered the moved
+#' report and the price process did not.
 #'
 #' @param rows Per-perturbation rows from node_report_stability_run().
 #' @return One row per instance and step.
@@ -2500,6 +2523,13 @@ node_report_stability_summary <- function(rows) {
               own_changed     = mean(own_changed),
               welfare_delta   = mean(abs(welfare_delta)),
               hamming         = mean(hamming),
+              # The same four readings on the re-pack at the base clearing's
+              # own prices, appended after the columns the summary already
+              # reported.
+              hamming_fixed_worst   = max(hamming_fixed),
+              beyond_exchange_fixed = mean(hamming_fixed > 2),
+              own_changed_fixed     = mean(own_changed_fixed),
+              welfare_delta_fixed   = mean(abs(welfare_delta_fixed)),
               .groups = "drop")
 }
 
