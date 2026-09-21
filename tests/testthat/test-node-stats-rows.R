@@ -77,3 +77,53 @@ test_that("the pipeline's node report carries the three measured tables", {
   expect_true(grepl("exp6_tuned\\s*=\\s*node_stats_rows", src))
   expect_true(grepl("exp6_sensitivity\\s*=\\s*node_stats_rows", src))
 })
+
+
+# ---- the frontier's rows are keyed by the posted level too ------------------
+#
+# The frontier is a curve: its posted rows differ from one another in nothing
+# but the level they were run at. A key built without the level therefore
+# holds every level of the family at once, and the transcription source can
+# say neither which level a number came from nor which of them a ratio was
+# read against.
+
+frontier_rows_fixture <- function() {
+  tidyr::expand_grid(graph_type = "tree", load_level = "high",
+                     architecture = "naive", congestion = "calibrated",
+                     mechanism = "posted_price", p_post_k = c(1, 2)) %>%
+    dplyr::mutate(welfare = c(10, 20), n_seeds = 10L)
+}
+
+test_that("the posted level in the key gives every frontier row one of its own", {
+  cv <- c("graph_type", "load_level", "architecture", "congestion")
+
+  pooled <- node_stats_rows(frontier_rows_fixture(), "welfare", "mechanism",
+                            cv, "n_seeds")
+  expect_length(pooled, 1L)
+  expect_equal(nrow(pooled[[1]]$statistics), 2L)
+
+  out <- node_stats_rows(frontier_rows_fixture(), "welfare", "mechanism",
+                         c(cv, "p_post_k"), "n_seeds")
+  expect_setequal(names(out), c("tree_high_naive_calibrated_1_posted_price",
+                                "tree_high_naive_calibrated_2_posted_price"))
+  # No two rows of the report share a (cell, metric): one key, one number.
+  rep <- make_stats_report(list(exp6_frontier = out))
+  expect_equal(anyDuplicated(rep[, c("cell", "metric")]), 0L)
+})
+
+test_that("the pipeline keys the frontier rows by the posted level", {
+  src <- paste(readLines(here::here("_targets.R")), collapse = " ")
+  # The argument itself, not the call around it: the tuned call REPORTS the
+  # chosen level as a metric, which is a different thing from keying on it.
+  cell_vars <- function(nm) {
+    call <- regmatches(src, regexpr(
+      paste0(nm, "\\s*=\\s*node_stats_rows.*?n_col"), src, perl = TRUE))
+    regmatches(call, regexpr("cell_vars\\s*=\\s*c\\([^)]*\\)", call,
+                             perl = TRUE))
+  }
+
+  expect_true(grepl("p_post_k", cell_vars("exp6_frontier")))
+  # The tuned table reports one row per mechanism per cell, so its key is
+  # already unique and the chosen level stays a column rather than a label.
+  expect_false(grepl("p_post_k", cell_vars("exp6_tuned")))
+})

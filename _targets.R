@@ -1197,13 +1197,18 @@ list(
     # shape: a statistic, the seeds behind it, and no test. Both tables are
     # keyed by the congestion level, so the label carries it: without it one
     # key holds the two levels' numbers with nothing to tell them apart.
+    # The frontier is a curve as well, and its posted rows differ in nothing
+    # but the level they were run at, so the level is part of its key too.
+    # The tuned table reports one row per mechanism per cell, so its key is
+    # already unique and the chosen level stays a column rather than a label.
     exp6_frontier = node_stats_rows(
       node_exp6_frontier,
       c("welfare", "tokens_admitted", "median_latency", "alloc_ratio",
         "welfare_vs_posted_at_matched_volume",
         "welfare_vs_posted_at_matched_latency"),
       "mechanism",
-      cell_vars = c("graph_type", "load_level", "architecture", "congestion"),
+      cell_vars = c("graph_type", "load_level", "architecture", "congestion",
+                    "p_post_k"),
       n_col = "n_seeds"),
     exp6_tuned = node_stats_rows(
       node_exp6_tuned,
