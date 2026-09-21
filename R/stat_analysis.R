@@ -824,7 +824,8 @@ compute_synergy <- function(raw_df, metric, ...) {
 #' Statistical summary for Experiment 6 (mechanism ablation).
 #'
 #' @param raw_df Per-seed results from exp6_results_raw.
-#' @return A list with stat summaries per topology x load, plus interaction.
+#' @return A list with stat summaries per topology x load, the interaction, and
+#'   `interaction_dropped`: the arms the interaction could not be fitted on.
 stat_exp6 <- function(raw_df) {
   metrics <- c("median_latency", "drop_rate", "welfare",
                "mean_price_volatility", "efficiency")
@@ -880,13 +881,27 @@ stat_exp6 <- function(raw_df) {
   if (dplyr::n_distinct(stats::na.omit(raw_df$congestion)) > 1L) {
     terms <- c(terms, "congestion")
   }
+  # The design is not complete: an arm that needs a contracted slice to post a
+  # price for runs on one architecture only, and a crossed model fitted over
+  # its empty cells is rank-deficient, so the whole interaction comes back
+  # missing. It is fitted on the arms every cell of the crossed factors ran,
+  # and the arms that could not enter it are reported beside it rather than
+  # dropped silently.
+  cells    <- setdiff(terms, "mechanism")
+  n_cells  <- nrow(distinct(raw_df, across(all_of(cells))))
+  in_every <- raw_df %>%
+    distinct(across(all_of(c("mechanism", cells)))) %>%
+    count(mechanism) %>%
+    filter(n == n_cells)
+  dropped <- setdiff(unique(raw_df$mechanism), in_every$mechanism)
   interaction <- art_anova(
-    raw_df %>% mutate(across(all_of(terms), factor)),
+    raw_df %>% filter(mechanism %in% in_every$mechanism) %>%
+      mutate(across(all_of(terms), factor)),
     stats::reformulate(paste(terms, collapse = " * "), response = "welfare")
   )
 
   list(per_topo_load = per_tl, per_architecture = per_arch,
-       interaction = interaction)
+       interaction = interaction, interaction_dropped = dropped)
 }
 
 #' Statistical summary for Experiment 11 (recipe heterogeneity).
