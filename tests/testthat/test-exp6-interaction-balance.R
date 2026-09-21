@@ -71,3 +71,59 @@ test_that("a complete design drops nothing", {
   expect_false(is.null(st$interaction))
   expect_length(st$interaction_dropped, 0L)
 })
+
+
+# ---- one arm per posted level, for the matched anchor too ------------------
+#
+# The matched-anchor arm runs at three posted levels under one mechanism name.
+# Pooled, one level of the mechanism factor holds three arms at triple
+# replication: every per-cell test then contrasts a mixture of three prices
+# against the other arms, and the interaction reports that mixture as one arm.
+# The level travels in the label, exactly as the posted family's does.
+
+.matched_frame <- function(seeds = 1:3) {
+  set.seed(19)
+  tidyr::expand_grid(
+    mechanism    = c("market", "greedy_ev"),
+    p_post_k     = 1,
+    graph_type   = c("tree", "sp"),
+    load_level   = c("medium", "high"),
+    architecture = c("naive", "hybrid"),
+    seed         = seeds) %>%
+    dplyr::bind_rows(tidyr::expand_grid(
+      mechanism    = "posted_price_matched",
+      p_post_k     = c(1, 2),
+      graph_type   = c("tree", "sp"),
+      load_level   = c("medium", "high"),
+      architecture = c("naive", "hybrid"),
+      seed         = seeds)) %>%
+    dplyr::mutate(
+      congestion            = "calibrated",
+      welfare               = 10 + 3 * (mechanism == "market") + p_post_k +
+        stats::runif(dplyr::n()),
+      median_latency        = stats::runif(dplyr::n(), 100, 300),
+      drop_rate             = stats::runif(dplyr::n()),
+      mean_price_volatility = stats::runif(dplyr::n()),
+      efficiency            = stats::runif(dplyr::n()))
+}
+
+test_that("each posted level of the matched arm is its own arm", {
+  raw  <- .matched_frame()
+  arms <- unique(suppressMessages(stat_exp6(raw))$per_architecture[[1]]$ci$mechanism)
+
+  expect_true(all(c("posted_price_matched_k1", "posted_price_matched_k2") %in%
+                    arms))
+  expect_false("posted_price_matched" %in% arms)
+})
+
+test_that("the interaction is fitted on every row of the arms it keeps", {
+  st <- suppressMessages(stat_exp6(.matched_frame()))
+
+  # Four arms rather than three: the two matched levels enter separately.
+  expect_equal(st$interaction$Df[st$interaction$term == "mechanism"], 3)
+  # Every arm runs in every cell here, so nothing is dropped and the model's
+  # degrees of freedom account for exactly the rows the frame has.
+  expect_length(st$interaction_dropped, 0L)
+  expect_equal(sum(st$interaction$Df) + st$interaction$Df.res[1] + 1,
+               nrow(.matched_frame()))
+})
