@@ -67,7 +67,7 @@ test_that("the tuning grid gives each mechanism one knob and no other freedom", 
   g <- node_tuning_grid(c(1L, 2L))
   expect_setequal(unique(g$mechanism), c("posted_price", "market", "market_cc"))
   expect_setequal(unique(g$p_post_k[g$mechanism == "posted_price"]),
-                  node_posted_levels())
+                  node_tuning_posted_levels())
   expect_setequal(unique(g$p_post_k[g$mechanism != "posted_price"]), 1)
   expect_setequal(unique(g$reserve_markup[g$mechanism == "market"]),
                   node_reserve_markups())
@@ -75,15 +75,15 @@ test_that("the tuning grid gives each mechanism one knob and no other freedom", 
   # Twelve cells: three instances, two loads, two architectures; each at both
   # congestion levels.
   expect_equal(nrow(g),
-               (length(node_posted_levels()) + 2 * length(node_reserve_markups())) *
-                 12 * 2 * 2)
+               (length(node_tuning_posted_levels()) +
+                  2 * length(node_reserve_markups())) * 12 * 2 * 2)
 })
 
 # A tuning frame whose argmax is known by construction: the posted price peaks
 # at 1.5, the market at 1.25 and the congestion-consistent arm at 2.
 .tuning_fixture <- function(seeds = 1:2) {
   knobs <- dplyr::bind_rows(
-    tibble(mechanism = "posted_price", p_post_k = node_posted_levels(),
+    tibble(mechanism = "posted_price", p_post_k = node_tuning_posted_levels(),
            reserve_markup = 1),
     tidyr::expand_grid(mechanism = c("market", "market_cc"), p_post_k = 1,
                        reserve_markup = node_reserve_markups()))
@@ -120,7 +120,8 @@ test_that("the tuned table reports the evaluation numbers at the chosen knob", {
   expect_setequal(names(tuned),
                   c("graph_type", "load_level", "architecture", "mechanism",
                     "p_post_k", "reserve_markup", "n_eval_seeds", "welfare",
-                    "tokens_admitted", "median_latency", "welfare_over_optimum"))
+                    "tokens_admitted", "median_latency", "welfare_over_optimum",
+                    "knob_at_boundary"))
   expect_true(all(tuned$n_eval_seeds == 2L))
   expect_true(all(tuned$welfare == 21.5))
   expect_equal(tuned$p_post_k[tuned$mechanism == "posted_price"], c(1.5, 1.5))
@@ -155,4 +156,80 @@ test_that("the evaluation grid's architecture values are driver levels, passed t
   expect_equal(knobs$p_post_k[knobs$architecture == "hybrid_noema"], 1)
   # the same mapping the pipeline applies must be the identity on these levels
   expect_identical(node_eval_architecture(eg$architecture), eg$architecture)
+})
+
+
+# ---- how wide the grids are, and whether the chosen knob sat on their edge --
+#
+# At the calibrated queue term the market's tuned markup sat at the top of its
+# grid in a quarter of the cells and the congestion-consistent arm's in most of
+# them, while the posted price's sat at the bottom in two thirds: a maximum on
+# the edge of a grid is a censored maximum, and the comparison it feeds reports
+# the widest dial we happened to offer rather than the mechanism's own best
+# setting. The grids are widened in both directions, and the tuned table says
+# of every cell whether its knob still sits on an edge.
+
+test_that("the widened grids extend the old ones rather than replace them", {
+  # Appended, never inserted: the rows already run keep their order, and a tie
+  # between an old value and a new one still resolves to the old one.
+  expect_equal(node_reserve_markups()[1:4], c(1, 1.25, 1.5, 2))
+  expect_true(all(c(3, 4) %in% node_reserve_markups()))
+  expect_equal(node_tuning_posted_levels()[seq_along(node_posted_levels())],
+               node_posted_levels())
+  expect_true(all(c(0.5, 0.75) %in% node_tuning_posted_levels()))
+  # The frontier's own family is untouched: its levels are the curve every
+  # other arm is read against, and a point added to it moves every ratio on it.
+  expect_equal(node_posted_levels(), c(1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4))
+})
+
+test_that("a markup below one lowers the floor rather than being clamped away", {
+  # Why the below-one values are on the grid at all: the effective floor is
+  # max(price_floor, reserve * markup) and the node callers leave price_floor
+  # at zero, so the market really does clear against a lower floor there.
+  env <- tuned_env(); tasks <- tuned_tasks(env)
+  base <- tuned_clear(env, tasks)
+  down <- tuned_clear(env, tasks, reserve_markup = 0.5)
+  expect_lt(min(down$clearing$prices$price), env$reserve_price)
+  expect_lt(down$clearing$unit_cost, base$clearing$unit_cost)
+  expect_gt(nrow(down$allocation), nrow(base$allocation))
+})
+
+test_that("a posted level below one posts a lower price", {
+  # The posted arm's counterpart of the same check: the anchor is k times the
+  # path's reserve cost with nothing clamping it at k = 1.
+  env <- tuned_env()
+  a <- function(k) posted_price_anchor_per_leaf(env, env$anc, k = k)
+  expect_true(all(a(0.5) < a(1)))
+  expect_true(all(a(0.75) < a(1)))
+  expect_equal(unname(a(0.5)), unname(0.5 * a(1)))
+})
+
+# One knob on the bottom of its grid, one on the top, one inside, one arm with
+# no knob at all.
+.boundary_eval_raw <- function() {
+  knobs <- dplyr::bind_rows(
+    tibble(mechanism = "posted_price", p_post_k = min(node_tuning_posted_levels()),
+           reserve_markup = 1),
+    tibble(mechanism = "market", p_post_k = 1,
+           reserve_markup = max(node_reserve_markups())),
+    tibble(mechanism = "market_cc", p_post_k = 1, reserve_markup = 1.25),
+    tibble(mechanism = "k8s", p_post_k = 1, reserve_markup = 1))
+  tidyr::expand_grid(graph_type = "tree", load_level = "high",
+                     architecture = "naive", knobs, seed = 11:12) %>%
+    dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50,
+                  median_latency = 200, welfare_over_optimum = 0.4)
+}
+
+test_that("the tuned table says whether the chosen knob sat on the grid's edge", {
+  tuned <- node_tuned_table(.boundary_eval_raw())
+  at    <- setNames(tuned$knob_at_boundary, tuned$mechanism)
+
+  expect_true(at[["posted_price"]])
+  expect_true(at[["market"]])
+  expect_false(at[["market_cc"]])
+  # An arm with nothing to tune has no edge to sit on.
+  expect_false(at[["k8s"]])
+  # The column is appended; every column the table already reported is intact.
+  expect_equal(names(tuned)[length(names(tuned))], "knob_at_boundary")
+  expect_true(all(tuned$welfare == 21.5))
 })

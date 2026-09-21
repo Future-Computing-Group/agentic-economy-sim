@@ -1789,8 +1789,34 @@ node_frontier_table <- function(raw_df,
 #' that rations, so a comparison at each mechanism's own best setting is a
 #' comparison of mechanisms rather than of who was given a dial.
 #'
+#' The first four values are the original grid, and the four beside them widen
+#' it in both directions: at the calibrated queue term the chosen markup sat on
+#' the old top in a quarter of the market's cells and in most of the
+#' congestion-consistent arm's, and a maximum on the edge of a grid reports the
+#' widest dial the grid offered rather than the mechanism's own best setting.
+#' Below one is a real setting rather than a no-op: the effective floor is
+#' max(price_floor, reserve * markup) and the node callers leave `price_floor`
+#' at its zero default, so the market clears against a genuinely lower floor.
+#' Appended, never inserted, so the rows already run keep their order and a tie
+#' between an old value and a new one still resolves to the old one.
+#'
 #' @return Numeric vector of multipliers on the per-node reserve.
-node_reserve_markups <- function() c(1, 1.25, 1.5, 2)
+node_reserve_markups <- function() c(1, 1.25, 1.5, 2, 3, 4, 0.5, 0.75)
+
+#' The posted levels the posted-price arm's knob is tuned over.
+#'
+#' The frontier's nine levels and two below marginal cost. The tuned level sat
+#' at the bottom of the old grid in most cells, and a level below one posts a
+#' strictly lower price: the anchor is `k` times the path's reserve cost with
+#' nothing clamping it at one.
+#'
+#' Its own vector rather than a wider `node_posted_levels()`: that family is
+#' the curve every other arm is read against in `node_frontier_table()`, so a
+#' point added to it moves every ratio on the curve and re-runs the whole
+#' mechanism block. Tuning a knob and measuring a frontier are two questions.
+#'
+#' @return Numeric vector of markups over marginal cost.
+node_tuning_posted_levels <- function() c(node_posted_levels(), 0.5, 0.75)
 
 #' The seeds a knob is chosen on and the seeds it is reported on.
 #'
@@ -1808,7 +1834,8 @@ node_tuning_split <- function() list(tuning = 1:5, evaluation = 11:20)
 node_tuning_grid <- function(seeds) {
   arms <- bind_rows(
     tidyr::expand_grid(mechanism = "posted_price",
-                       p_post_k = node_posted_levels(), reserve_markup = 1),
+                       p_post_k = node_tuning_posted_levels(),
+                       reserve_markup = 1),
     tidyr::expand_grid(mechanism = c("market", "market_cc"), p_post_k = 1,
                        reserve_markup = node_reserve_markups()))
   tidyr::expand_grid(
@@ -1883,7 +1910,30 @@ node_eval_architecture <- function(x) {
   x[[1]]
 }
 
+#' Did the chosen knob sit on the edge of the grid it was chosen from.
+#'
+#' A maximum attained at the smallest or largest level the grid offered is a
+#' censored maximum: the mechanism may do better outside, and the number the
+#' comparison reports is then the grid's width rather than the mechanism's best
+#' setting. An arm with nothing to tune has no edge to sit on.
+#'
+#' @param mechanism      The arm.
+#' @param p_post_k       Its chosen posted level.
+#' @param reserve_markup Its chosen reserve markup.
+#' @return Logical vector.
+node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
+  edge <- function(v, g) !is.na(v) & (v <= min(g) | v >= max(g))
+  dplyr::case_when(
+    mechanism == "posted_price" ~ edge(p_post_k, node_tuning_posted_levels()),
+    mechanism %in% c("market", "market_cc") ~ edge(reserve_markup,
+                                                   node_reserve_markups()),
+    TRUE ~ FALSE)
+}
+
 #' What each mechanism reaches at its tuned knob, on the held-out seeds.
+#'
+#' `knob_at_boundary` is appended after the columns the table already reported,
+#' so a caller that reads it by name keeps reading what it read before.
 #'
 #' @param eval_raw  Per-seed results of the evaluation grid.
 #' @param cell_vars The variables a knob was chosen inside.
@@ -1901,7 +1951,9 @@ node_tuned_table <- function(eval_raw,
               tokens_admitted      = mean(tokens_admitted, na.rm = TRUE),
               median_latency       = mean(median_latency, na.rm = TRUE),
               welfare_over_optimum = mean(welfare_over_optimum, na.rm = TRUE),
-              .groups = "drop")
+              .groups = "drop") %>%
+    mutate(knob_at_boundary = node_knob_at_boundary(mechanism, p_post_k,
+                                                    reserve_markup))
 }
 
 
