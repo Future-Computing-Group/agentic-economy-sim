@@ -10,6 +10,7 @@
 #   - no store-internal arm string reaches a plotted value, and so no legend:
 #     the printed names are the manuscript's own (T / S / X for the instances,
 #     uncontracted / contracted for the architectures);
+#   - the mechanism figure carries no ascending arm.
 #
 # The file check is a guard on the pipeline's own output and stands down where
 # there is no local store to have produced it.
@@ -40,6 +41,30 @@ node_metric_stub <- function(df) {
 node_stub <- function(...) {
   node_metric_stub(tidyr::expand_grid(
     graph_type = c("tree", "sp", "entangled"), ..., seed = 1:3))
+}
+
+node_exp6_stub <- function() {
+  node_stub(load_level   = c("medium", "high"),
+            architecture = c("naive", "hybrid_noema"),
+            congestion   = c("baseline", "calibrated"),
+            mechanism    = c("random", "edf", "greedy_ev", "market",
+                             "market_asc", "market_cc", "k8s", "posted_price"),
+            p_post_k     = 1)
+}
+
+# The tuned table is already a per-cell mean over the evaluation seeds, and it
+# carries no drop rate: the figure's drop panel has nothing to draw for these
+# two arms, which is a property of the store and not of the plotting code.
+node_exp6_tuned_stub <- function() {
+  tidyr::expand_grid(
+    graph_type   = c("tree", "sp", "entangled"),
+    load_level   = c("medium", "high"),
+    architecture = c("naive", "hybrid_noema"),
+    congestion   = c("baseline", "calibrated"),
+    mechanism    = c("greedy_ev", "k8s", "market", "market_cc", "posted_price")
+  ) %>%
+    dplyr::mutate(welfare = 55, alloc_ratio_true = 0.97, median_latency = 95,
+                  tokens_admitted = 88)
 }
 
 # Every ggplot inside a patchwork, including the one the patchwork itself
@@ -76,7 +101,17 @@ test_that("every node-level figure function returns a ggplot", {
     exp3  = make_node_exp3_tufte(node_stub(
       load_level = c("medium", "high"), leaf_mix = c("uniform", "skewed"),
       policy = c("none", "trust", "locality", "role", "residency",
-                 "residency_sliced")))
+                 "residency_sliced"))),
+    exp4a = make_node_exp4_tufte(node_stub(
+      load_level = c("medium", "high"),
+      architecture = c("naive", "naive_ema", "hybrid_noema", "hybrid_ema")), "a"),
+    exp4b = make_node_exp4_tufte(node_stub(
+      load_level = c("medium", "high"),
+      architecture = c("naive", "naive_ema", "hybrid_noema", "hybrid_ema")), "b"),
+    exp5  = make_node_exp5_tufte(node_stub(
+      load_level = c("medium", "high"), policy = c("none", "locality"),
+      architecture = c("naive", "hybrid_ema"))),
+    exp6  = make_node_exp6_tufte(node_exp6_stub(), node_exp6_tuned_stub())
   )
   for (nm in names(figs)) {
     expect_s3_class(figs[[nm]], "ggplot")
@@ -96,7 +131,14 @@ test_that("no plotted value carries a store-internal arm or instance string", {
     make_node_exp3_tufte(node_stub(
       load_level = c("medium", "high"), leaf_mix = c("uniform", "skewed"),
       policy = c("none", "trust", "locality", "role", "residency",
-                 "residency_sliced")))
+                 "residency_sliced"))),
+    make_node_exp4_tufte(node_stub(
+      load_level = c("medium", "high"),
+      architecture = c("naive", "naive_ema", "hybrid_noema", "hybrid_ema")), "a"),
+    make_node_exp5_tufte(node_stub(
+      load_level = c("medium", "high"), policy = c("none", "locality"),
+      architecture = c("naive", "hybrid_ema"))),
+    make_node_exp6_tufte(node_exp6_stub(), node_exp6_tuned_stub())
   )
   for (p in figs) {
     labs <- plotted_labels(p)
@@ -114,12 +156,45 @@ test_that("the instances print as T, S and X in that order", {
   expect_equal(levels(inst), c("T", "S", "X"))
 })
 
+test_that("the congestion levels print as calibrated and baseline", {
+  # The mechanism figure reports the calibrated level; the string is the
+  # manuscript's, and the store's own, so a rename on either side fails here.
+  raw <- node_exp6_stub()
+  expect_true(all(c("calibrated", "baseline") %in% raw$congestion))
+  p <- make_node_exp6_tufte(raw, node_exp6_tuned_stub())
+  expect_s3_class(p, "ggplot")
+})
+
+# --- the mechanism figure's arms -------------------------------------------
+
+test_that("the mechanism figure plots no ascending arm", {
+  p <- make_node_exp6_tufte(node_exp6_stub(), node_exp6_tuned_stub())
+  expect_equal(grep("asc", plotted_labels(p), value = TRUE), character(0))
+  arms <- unique(unlist(lapply(patch_plots(p),
+                               function(q) as.character(q$data$arm))))
+  expect_setequal(arms, c("random", "EDF", "value-greedy", "market",
+                          "posted price (tuned)", "market (tuned)"))
+})
+
+test_that("the mechanism figure reports the calibrated level alone", {
+  raw <- node_exp6_stub()
+  # The baseline rows carry a different welfare, so a figure that pooled the
+  # two congestion levels would land between them rather than on the reported
+  # one.
+  raw$welfare[raw$congestion == "baseline"] <- 999
+  p <- make_node_exp6_tufte(raw, node_exp6_tuned_stub())
+  welf <- unlist(lapply(patch_plots(p), function(q) q$data$welfare_mean))
+  expect_true(all(welf[is.finite(welf)] < 900))
+})
+
 # --- the files the manuscript includes -------------------------------------
 
 test_that("the node-level figure targets write non-empty PDFs", {
   skip_if_not(dir.exists(here::here("_targets", "objects")),
               "no local store: these files are pipeline output")
-  for (f in c("exp1_tufte.pdf", "exp2_tufte.pdf", "exp3_tufte.pdf")) {
+  for (f in c("exp1_tufte.pdf", "exp2_tufte.pdf", "exp3_tufte.pdf",
+              "exp4_a_tufte.pdf", "exp4_b_tufte.pdf", "exp5_tufte.pdf",
+              "exp6_tufte.pdf")) {
     path <- here::here("fig", "node", f)
     expect_true(file.exists(path), info = f)
     expect_gt(file.size(path), 0)

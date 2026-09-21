@@ -1549,5 +1549,29 @@ list(
   tar_target(node_exp3_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
     ggsave("fig/node/exp3_tufte.pdf", node_exp3_plot_tufte, width = fig_width, height = 3.4, dpi = fig_dpi)
     ggsave("fig/node/exp3_tufte.png", node_exp3_plot_tufte, width = fig_width, height = 3.4, dpi = 200)
-    "fig/node/exp3_tufte.pdf" }, format = "file")
+    "fig/node/exp3_tufte.pdf" }, format = "file"),
+  tar_target(node_exp4a_plot_tufte,
+             make_node_exp4_tufte(bind_rows(node_exp4_results_raw), "a")),
+  tar_target(node_exp4a_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp4_a_tufte.pdf", node_exp4a_plot_tufte, width = fig_width, height = 3.2, dpi = fig_dpi)
+    ggsave("fig/node/exp4_a_tufte.png", node_exp4a_plot_tufte, width = fig_width, height = 3.2, dpi = 200)
+    "fig/node/exp4_a_tufte.pdf" }, format = "file"),
+  tar_target(node_exp4b_plot_tufte,
+             make_node_exp4_tufte(bind_rows(node_exp4_results_raw), "b")),
+  tar_target(node_exp4b_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp4_b_tufte.pdf", node_exp4b_plot_tufte, width = fig_width, height = 3.7, dpi = fig_dpi)
+    ggsave("fig/node/exp4_b_tufte.png", node_exp4b_plot_tufte, width = fig_width, height = 3.7, dpi = 200)
+    "fig/node/exp4_b_tufte.pdf" }, format = "file"),
+  tar_target(node_exp5_plot_tufte,
+             make_node_exp5_tufte(bind_rows(node_exp5_results_raw))),
+  tar_target(node_exp5_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp5_tufte.pdf", node_exp5_plot_tufte, width = fig_width, height = fig_height, dpi = fig_dpi)
+    ggsave("fig/node/exp5_tufte.png", node_exp5_plot_tufte, width = fig_width, height = fig_height, dpi = 200)
+    "fig/node/exp5_tufte.pdf" }, format = "file"),
+  tar_target(node_exp6_plot_tufte,
+             make_node_exp6_tufte(bind_rows(node_exp6_results_raw), node_exp6_tuned)),
+  tar_target(node_exp6_fig_tufte, { dir.create("fig/node", recursive = TRUE, showWarnings = FALSE)
+    ggsave("fig/node/exp6_tufte.pdf", node_exp6_plot_tufte, width = fig_width, height = 3.4, dpi = fig_dpi)
+    ggsave("fig/node/exp6_tufte.png", node_exp6_plot_tufte, width = fig_width, height = 3.4, dpi = 200)
+    "fig/node/exp6_tufte.pdf" }, format = "file")
 )

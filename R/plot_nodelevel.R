@@ -256,3 +256,161 @@ make_node_exp3_tufte <- function(raw_df) {
             pan("mean_price_volatility", .sigp, xlab = "Coordinate cap")) +
            plot_layout(ncol = 2, guides = "collect"))
 }
+
+# ===========================================================================
+# Architecture: the 2x2 factorial
+# ===========================================================================
+
+# The cleared series is the same post-burn-in dispersion measured before the
+# reporting filter, so the two volatility panels are read against each other.
+.sigp_cleared <- expression(atop(paste("Price vol. (", sigma[p], ")"),
+                                 "cleared, after burn-in"))
+
+#' Node-level Exp.4 figures: the four factorial arms.
+#'
+#' Panel set "a" is operational (latency, drop rate); "b" is economic (welfare,
+#' and the post-burn-in price volatility of the agent-facing series beside the
+#' cleared one it is a filtered copy of).
+#'
+#' @param raw_df Per-seed rows from node_exp4_results_raw.
+#' @param which  "a" or "b".
+#' @return A patchwork.
+make_node_exp4_tufte <- function(raw_df, which = c("a", "b")) {
+  which <- match.arg(which)
+  df <- dplyr::bind_rows(raw_df) %>%
+    node_instance_col() %>%
+    dplyr::mutate(arm = node_label_col(.data$architecture, node_arch_names),
+                  load_level = node_load2(.data$load_level)) %>%
+    node_plot_ci(c("instance", "arm", "load_level"),
+                 c("median_latency", "drop_rate", "welfare",
+                   "mean_price_volatility_tail", "price_volatility_cleared"))
+  base_aes <- aes(x = instance, colour = load_level, linetype = arm,
+                  shape = arm, group = interaction(arm, load_level))
+  pan <- function(y, lab, pct = FALSE)
+    node_panel(df, base_aes, y, lab, pct = pct, dodge_w = 0.3) +
+      scale_colour_manual(values = palette_load2_tufte, name = "Load") +
+      scale_linetype_manual(values = setNames(linetype_qual_tufte,
+                                              unname(node_arch_names)),
+                            name = NULL) +
+      scale_shape_manual(values = setNames(15:18, unname(node_arch_names)),
+                         name = NULL)
+
+  fig <- if (which == "a") {
+    (pan("median_latency", "Latency (ms)") / pan("drop_rate", "Drop rate", TRUE)) +
+      plot_layout(guides = "collect")
+  } else {
+    (pan("welfare", "Welfare (a.u.)") /
+       (pan("mean_price_volatility_tail", .sigp_tail) +
+          pan("price_volatility_cleared", .sigp_cleared))) +
+      plot_layout(guides = "collect")
+  }
+  .bottom2(fig) &
+    ggplot2::theme(legend.box = "vertical",
+                   legend.spacing.y = ggplot2::unit(0, "pt"))
+}
+
+# ===========================================================================
+# Architecture x governance
+# ===========================================================================
+
+#' Node-level Exp.5 figure: the contraction crossed with a zero cap.
+#'
+#' @param raw_df Per-seed rows from node_exp5_results_raw.
+#' @return A patchwork of two rows, faceted by load.
+make_node_exp5_tufte <- function(raw_df) {
+  df <- dplyr::bind_rows(raw_df) %>%
+    node_instance_col() %>%
+    dplyr::mutate(
+      condition = factor(
+        paste(node_arch2_names[as.character(.data$architecture)],
+              node_cap2_names[as.character(.data$policy)], sep = ", "),
+        levels = as.vector(outer(node_arch2_names, node_cap2_names,
+                                 paste, sep = ", "))),
+      load_level = node_load2(.data$load_level)) %>%
+    node_plot_ci(c("instance", "condition", "load_level"),
+                 c("greedy_exact_incidence", "welfare"))
+  base_aes <- aes(x = instance, colour = condition, shape = condition,
+                  linetype = condition, group = condition)
+  pan <- function(y, lab, pct = FALSE)
+    node_panel(df, base_aes, y, lab, pct = pct, dodge_w = 0.25,
+               facet = "load_level", xlab = "Instance") +
+      scale_colour_manual(values = setNames(palette_qual_tufte,
+                                            levels(df$condition)),
+                          name = "Condition") +
+      scale_shape_manual(values = setNames(15:18, levels(df$condition)),
+                         name = "Condition") +
+      scale_linetype_manual(values = setNames(linetype_qual_tufte,
+                                              levels(df$condition)),
+                            name = "Condition")
+
+  .bottom2((pan("greedy_exact_incidence", "Exactness shortfall") /
+              pan("welfare", "Welfare (a.u.)")) +
+           plot_layout(ncol = 1, guides = "collect"))
+}
+
+# ===========================================================================
+# Mechanism
+# ===========================================================================
+
+#' Node-level Exp.6 figure: the ablation levels and the tuned arms.
+#'
+#' The reported congestion level is the calibrated one, under the uncontracted
+#' architecture. The ascending arm is retired and appears nowhere. The two
+#' tuned arms come from the tuned table, whose knob was chosen on seeds
+#' disjoint from the ablation's; that table carries no drop rate, so those two
+#' arms have no point in the drop panel.
+#'
+#' @param raw_df   Per-seed rows from node_exp6_results_raw.
+#' @param tuned_df One tuned row per cell and mechanism, node_exp6_tuned.
+#' @return A patchwork of four panels, faceted by load.
+make_node_exp6_tufte <- function(raw_df, tuned_df) {
+  metrics <- c("welfare", "alloc_ratio_true", "drop_rate", "median_latency")
+  arms <- c(unname(node_mech_names), unname(node_tuned_names))
+
+  ablation <- dplyr::bind_rows(raw_df) %>%
+    dplyr::filter(.data$architecture == "naive",
+                  .data$congestion == "calibrated",
+                  .data$mechanism %in% names(node_mech_names)) %>%
+    node_instance_col() %>%
+    dplyr::mutate(arm = node_mech_names[as.character(.data$mechanism)]) %>%
+    node_plot_ci(c("instance", "arm", "load_level"), metrics)
+
+  tuned <- dplyr::bind_rows(tuned_df) %>%
+    dplyr::filter(.data$architecture == "naive",
+                  .data$congestion == "calibrated",
+                  .data$mechanism %in% names(node_tuned_names)) %>%
+    node_instance_col() %>%
+    dplyr::mutate(arm = node_tuned_names[as.character(.data$mechanism)],
+                  drop_rate = NA_real_) %>%
+    node_plot_ci(c("instance", "arm", "load_level"), metrics)
+
+  df <- dplyr::bind_rows(ablation, tuned) %>%
+    dplyr::mutate(arm = factor(.data$arm, levels = arms),
+                  load_level = node_load2(.data$load_level))
+  base_aes <- aes(x = instance, colour = arm, shape = arm, linetype = arm,
+                  group = arm)
+  pan <- function(y, lab, pct = FALSE)
+    node_panel(df, base_aes, y, lab, pct = pct, dodge_w = 0.3,
+               facet = "load_level", xlab = "Instance") +
+      scale_colour_manual(values = setNames(palette_arm_node(), arms),
+                          name = "Arm", drop = FALSE) +
+      scale_shape_manual(values = setNames(shape_arm_node(), arms),
+                         name = "Arm", drop = FALSE) +
+      scale_linetype_manual(values = setNames(linetype_arm_node(), arms),
+                            name = "Arm", drop = FALSE)
+
+  fig <- (pan("welfare", "Welfare (a.u.)") +
+          pan("alloc_ratio_true", "Allocative ratio") +
+          pan("drop_rate", "Drop rate", TRUE) +
+          pan("median_latency", "Latency (ms)")) +
+    plot_layout(ncol = 2, guides = "collect") +
+    plot_annotation(
+      caption = "Calibrated congestion level, uncontracted architecture.",
+      theme = ggplot2::theme(
+        plot.caption = ggplot2::element_text(size = 6, colour = "grey35",
+                                             hjust = 0)))
+  fig & ggplot2::theme(legend.position = "bottom") &
+    ggplot2::guides(colour   = ggplot2::guide_legend(nrow = 3),
+                    shape    = ggplot2::guide_legend(nrow = 3),
+                    linetype = ggplot2::guide_legend(nrow = 3))
+}
