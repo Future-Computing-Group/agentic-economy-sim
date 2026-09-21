@@ -1158,18 +1158,24 @@ list(
     exp10 = node_stats_exp10,
     exp7a = node_stats_exp7a, exp7b = node_stats_exp7b,
     # The measured tables of the mechanism block, transcribed in the same
-    # shape: a statistic, the seeds behind it, and no test.
+    # shape: a statistic, the seeds behind it, and no test. Both tables are
+    # keyed by the congestion level, so the label carries it: without it one
+    # key holds the two levels' numbers with nothing to tell them apart.
     exp6_frontier = node_stats_rows(
       node_exp6_frontier,
       c("welfare", "tokens_admitted", "median_latency", "alloc_ratio",
         "welfare_vs_posted_at_matched_volume",
         "welfare_vs_posted_at_matched_latency"),
-      "mechanism", n_col = "n_seeds"),
+      "mechanism",
+      cell_vars = c("graph_type", "load_level", "architecture", "congestion"),
+      n_col = "n_seeds"),
     exp6_tuned = node_stats_rows(
       node_exp6_tuned,
       c("welfare", "tokens_admitted", "median_latency", "welfare_over_optimum",
         "p_post_k", "reserve_markup"),
-      "mechanism", n_col = "n_eval_seeds"),
+      "mechanism",
+      cell_vars = c("graph_type", "load_level", "architecture", "congestion"),
+      n_col = "n_eval_seeds"),
     # Averaged over its seeds first, so a cell of the sweep is one number per
     # response rather than one per seed.
     exp6_sensitivity = node_stats_rows(

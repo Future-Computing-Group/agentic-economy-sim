@@ -97,6 +97,46 @@ test_that("stat_exp6 cells and per-architecture splits carry the level", {
   expect_true(any(grepl("congestion", res$interaction$term)))
 })
 
+
+# ---- the machine-written report --------------------------------------------
+
+test_that("the measured tables label their rows with the congestion level", {
+  df <- tidyr::expand_grid(graph_type = "tree", load_level = "high",
+                           architecture = "naive",
+                           congestion = c("baseline", "calibrated"),
+                           mechanism = c("market", "posted_price")) %>%
+    dplyr::mutate(welfare = seq_len(dplyr::n()), n_seeds = 10L)
+
+  out <- node_stats_rows(df, "welfare", "mechanism",
+                         cell_vars = c("graph_type", "load_level",
+                                       "architecture", "congestion"),
+                         n_col = "n_seeds")
+  expect_setequal(names(out), c("tree_high_naive_baseline_market",
+                                "tree_high_naive_baseline_posted_price",
+                                "tree_high_naive_calibrated_market",
+                                "tree_high_naive_calibrated_posted_price"))
+  # One row per key, so each number is attributable to the level it was run at.
+  for (cell in out) expect_equal(nrow(cell$statistics), 1L)
+
+  # Pooled, the two levels land under one key and neither can be read off it.
+  pooled <- node_stats_rows(df, "welfare", "mechanism",
+                            cell_vars = c("graph_type", "load_level",
+                                          "architecture"),
+                            n_col = "n_seeds")
+  expect_equal(nrow(pooled[["tree_high_naive_market"]]$statistics), 2L)
+})
+
+test_that("the pipeline labels the frontier and tuned rows by the level", {
+  src <- paste(readLines(here::here("_targets.R")), collapse = " ")
+  for (nm in c("exp6_frontier", "exp6_tuned")) {
+    call <- regmatches(src, regexpr(paste0(nm, "\\s*=\\s*node_stats_rows.*?n_col"),
+                                    src, perl = TRUE))
+    expect_length(call, 1L)
+    expect_true(grepl("congestion", call), info = nm)
+  }
+})
+
+
 test_that("a frame with no congestion column analyses exactly as it did", {
   res <- stat_exp6(dplyr::select(cong_frame(), -congestion))
 
