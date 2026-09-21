@@ -390,19 +390,33 @@ sweep_leaf_shares <- function(leaf_mix = c("uniform", "skewed"), leaves) {
   setNames(s, leaves)
 }
 
-#' Token capacities that make the internal nodes the binding ones.
+#' Token capacities from a fixed fraction of each node's expected demand.
 #'
 #' A node's capacity is a fixed fraction of the demand expected under its own
 #' block at high load, which is the rule the shipped specs follow by hand: the
-#' fraction is below one so the internal nodes bind, and the leaves are held at
-#' a multiple of their own expected demand so they do not. The shipped small
-#' instance's ratios of capacity to leaf share are 6 at the tightest internal
-#' node and 15 at a leaf, a factor of 2.5, which is where the leaf default
-#' comes from.
+#' fraction is below one at an internal node, and a leaf is held at a multiple
+#' of its own expected demand. The shipped small instance's ratios of capacity
+#' to leaf share are 6 at the tightest internal node and 15 at a leaf, a factor
+#' of 2.5, which is where the leaf default comes from.
 #'
 #' Capacities are set at UNIFORM shares and then held fixed across mixes: the
 #' instance is the treatment and the mix is the demand drawn against it, so a
 #' capacity that moved with the mix would confound the two.
+#'
+#' Which is also the limit of what the leaf multiple buys. A leaf sits above
+#' its own demand at the uniform mix and at the uniform mix only: the skewed
+#' mix puts 0.55 of the arrivals on one leaf whose capacity was sized for 1/n
+#' of them, and the multiple 1.5/n is below 0.55 at every width the generator
+#' draws. Measured on the sweep's own hundred instances and its own arrival
+#' draws, some leaf's arrivals exceed its own capacity in 96 percent of the
+#' skewed rounds against 7 percent of the uniform ones, and a leaf is the node
+#' the onset law expects to cross first on 13 of the 100 instances at the
+#' skewed mix, against none of them at the uniform mix.
+#'
+#' A skewed row is therefore not a row in which the internal nodes ration and
+#' the leaves stand clear of it. The dominant leaf rations there too. That is a
+#' property of the mix rather than a defect of the rule, and it is what a
+#' reading of the skewed rows has to carry.
 #'
 #' @param leaves          Character vector of leaves.
 #' @param internal_blocks Named list of leaf subsets.
