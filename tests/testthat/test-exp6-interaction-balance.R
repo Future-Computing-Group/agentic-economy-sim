@@ -12,16 +12,19 @@
 # dropped silently.
 # ---------------------------------------------------------------------------
 
-# One arm absent from one architecture, everything else crossed.
+# One arm absent from one architecture, everything else crossed. That arm runs
+# at two posted levels, as the block's own grid runs it.
 .exp6_frame <- function(seeds = 1:3) {
   full <- tidyr::expand_grid(
     mechanism    = c("market", "greedy_ev"),
+    p_post_k     = 1,
     graph_type   = c("tree", "sp"),
     load_level   = c("medium", "high"),
     architecture = c("naive", "hybrid"),
     seed         = seeds)
   partial <- tidyr::expand_grid(
     mechanism    = "market_posted_slice",
+    p_post_k     = c(1, 2),
     graph_type   = c("tree", "sp"),
     load_level   = c("medium", "high"),
     architecture = "hybrid",
@@ -29,7 +32,6 @@
   set.seed(11)
   dplyr::bind_rows(full, partial) %>%
     dplyr::mutate(
-      p_post_k              = 1,
       congestion            = "calibrated",
       welfare               = 10 + 5 * (architecture == "hybrid") +
         3 * (mechanism == "market") + stats::runif(dplyr::n()),
@@ -55,12 +57,31 @@ test_that("the interaction is fitted on the arms every cell ran", {
 
   expect_false(is.null(st$interaction))
   expect_true(any(grepl("mechanism:architecture", st$interaction$term)))
-  # The arm that could not enter the model is named, not silently absent.
-  expect_equal(st$interaction_dropped, "market_posted_slice")
-  # and the per-cell summaries still carry it: the balance is the model's
+  # The arms that could not enter the model are named, not silently absent,
+  # and the slice's two posted levels are two arms there as everywhere else.
+  expect_setequal(st$interaction_dropped,
+                  c("market_posted_slice_k1", "market_posted_slice_k2"))
+  # and the per-cell summaries still carry them: the balance is the model's
   # requirement, not the block's.
   expect_true(any(vapply(st$per_architecture, function(d)
-    "market_posted_slice" %in% d$ci$mechanism, logical(1))))
+    all(c("market_posted_slice_k1", "market_posted_slice_k2") %in%
+          d$ci$mechanism), logical(1))))
+})
+
+test_that("each posted level of the mixed pricing rule is its own arm", {
+  # The slice arm posts a price at two levels under one mechanism name. Pooled,
+  # one level of the mechanism factor holds two arms at double replication and
+  # every per-cell test contrasts a mixture of two prices against the other
+  # arms. Being out of the interaction is a different fact -- it runs on one
+  # architecture -- and does not decide how many arms it is.
+  st   <- suppressMessages(stat_exp6(.exp6_frame()))
+  arms <- unique(unlist(lapply(st$per_architecture, function(d) d$ci$mechanism)))
+
+  expect_true(all(c("market_posted_slice_k1", "market_posted_slice_k2") %in%
+                    arms))
+  expect_false("market_posted_slice" %in% arms)
+  # The arms with nothing posted keep their bare names.
+  expect_true(all(c("market", "greedy_ev") %in% arms))
 })
 
 test_that("a complete design drops nothing", {

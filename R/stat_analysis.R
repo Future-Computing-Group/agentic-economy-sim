@@ -835,9 +835,13 @@ stat_exp6 <- function(raw_df) {
   # mixture of three prices against the other mechanisms and report the mixture
   # as a single arm. The matched anchor is the same arm at its own levels and
   # takes the same label, so one level of the mechanism factor never holds
-  # three arms at triple replication. A frame with no markup column carries no
-  # posted-price arm either, so the label reduces to the mechanism name and a
-  # store written before those arms still analyses.
+  # three arms at triple replication. The mixed pricing rule posts a price for
+  # its slice at two levels of the same markup and takes the label for the same
+  # reason: it is excluded from the interaction because it runs on one
+  # architecture, which is a different fact from how many arms it is. A frame
+  # with no markup column carries no posted-price arm either, so the label
+  # reduces to the mechanism name and a store written before those arms still
+  # analyses.
   if (!"p_post_k" %in% names(raw_df)) raw_df$p_post_k <- NA_real_
   # The congestion level the arms were run at is a cell factor for the same
   # reason the architecture is: every arm runs at both levels, and a cell that
@@ -847,7 +851,8 @@ stat_exp6 <- function(raw_df) {
   if (!"congestion" %in% names(raw_df)) raw_df$congestion <- NA_character_
   raw_df <- raw_df %>%
     mutate(mechanism = ifelse(
-      mechanism %in% c("posted_price", "posted_price_matched"),
+      mechanism %in% c("posted_price", "posted_price_matched",
+                       "market_posted_slice"),
       paste0(mechanism, "_k", p_post_k), mechanism))
   cell_name <- function(...) paste(stats::na.omit(c(...)), collapse = "_")
 
