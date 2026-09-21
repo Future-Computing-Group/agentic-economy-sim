@@ -306,24 +306,29 @@ sweep_triangle_capacity_family <- function(n_agents = 90L, lambda = 1.5,
 
 #' The deployed O-RAN pipeline templates as one named family.
 #'
-#' The companion deployment runs three eight-stage pipeline templates
-#' concurrently over the same administrative domains, which is the sweep's
-#' structure in another vocabulary: a domain is a capacity node, a template is
-#' a leaf (a task is one execution of one template), and a template sits in a
-#' domain's block exactly when it has a stage there. The three templates
-#' compete for the same domains in the same window, so the domain's capacity is
-#' shared across them, which is what makes the blocks overlap at all.
+#' The companion deployment specifies three eight-stage pipeline templates and
+#' the administrative domains their stages run in. Read as a leaf-block family
+#' that is the sweep's structure in another vocabulary: a domain is a capacity
+#' node, a template is a leaf (a task is one execution of one template), and a
+#' template sits in a domain's block exactly when it has a stage there.
 #'
-#' The translation, and what it rests on:
+#' What this row is, and what it is not:
 #'
-#'   - Five domain nodes, at the granularity the templates name their stages
-#'     at: the distributed unit, the central unit, the near-real-time
-#'     controller, the non-real-time controller and the management and
-#'     orchestration plane. The deployment maps these onto four sites, the
-#'     central unit and the near-real-time controller sharing one; the
-#'     five-node reading is the finer of the two and the one the stage names
-#'     support, and the coarser reading merges two blocks that are equal here
-#'     anyway, so neither changes a predicate.
+#'   - The three templates arriving in the same window is a COUNTERFACTUAL. The
+#'     companion's own campaign never ran it: the pipeline type is a factor of
+#'     its grid, one template per cell, so no domain there carries two
+#'     templates at once and no pair of blocks can overlap. Blocks overlap here
+#'     because this family asks what the structure would be if the deployment
+#'     ran them together, which is the sweep's question and not a reading of a
+#'     measurement anybody took.
+#'   - Five domain nodes rather than the source's four administrative domains:
+#'     the distributed unit, the central unit, the near-real-time controller,
+#'     the non-real-time controller and the management and orchestration plane.
+#'     One of the source's domains carries both the central unit and the
+#'     near-real-time controller, and the stage names separate them, so the
+#'     five nodes are a RE-SPLIT of the four rather than the source's own
+#'     partition. Merging them back makes equal two blocks that are equal here
+#'     anyway, so the re-split changes no predicate.
 #'   - The chain template names all eight of its stages and crosses all five
 #'     domains. The series-parallel template is four sources at the
 #'     distributed and central units converging on four stages at the
@@ -332,11 +337,14 @@ sweep_triangle_capacity_family <- function(n_agents = 90L, lambda = 1.5,
 #'     further central-unit stream and a distributed-unit-sourced stream. Both
 #'     therefore occupy the first three domains and neither reaches the
 #'     non-real-time controller or the management plane.
-#'   - A stage-level variant is NOT built. Only the chain template's eight
-#'     stages are individually named; the other two are described by their
-#'     structure and their stage counts, so a stage-level family would be a
-#'     guess at two thirds of its own leaves. The domain-level family is what
-#'     the source specifies.
+#'   - A stage-level variant is NOT built, and the obstacle is not only that
+#'     two of the three templates name no individual stages. The source never
+#'     states whether a stage is ONE capacity node shared by every template
+#'     that runs it or one node per template, and that is exactly what decides
+#'     whether a crossing can arise at all: per-template stage nodes make every
+#'     block a singleton and the family laminar by construction, while shared
+#'     stage nodes are a finer family whose crossings are the question. A
+#'     stage-level row would therefore report the reading it assumed.
 #'
 #' Capacities follow the generated instances' rule exactly, so the named row is
 #' read on the same scale as the strata.
