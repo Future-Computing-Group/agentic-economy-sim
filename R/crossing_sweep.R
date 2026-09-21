@@ -154,10 +154,17 @@
 #' flags are the structural sufficient conditions that stay computable above
 #' the limit.
 #'
+#' The limit is set above the widest matrix the sweep can build -- eight leaves
+#' and six distinct internal blocks, fourteen rows plus columns -- so every
+#' instance of the sweep gets a verdict rather than an NA. It is a limit and
+#' not a formality: the enumeration is over all square submatrices of both
+#' orders, and it stands down above the sweep's own widths rather than running
+#' at whatever a caller hands it.
+#'
 #' @param M      A 0/1 matrix.
 #' @param max_nm Largest rows-plus-columns the enumeration is run at.
 #' @return TRUE, FALSE, or NA where the matrix is too large.
-.sweep_tu <- function(M, max_nm = 10L) {
+.sweep_tu <- function(M, max_nm = 20L) {
   nr <- nrow(M); nc <- ncol(M)
   if (nr == 0L || nc == 0L) return(TRUE)
   if (nr + nc > max_nm) return(NA)
@@ -263,6 +270,37 @@ sweep_triangle_family <- function() {
     leaves = c("a", "b", "c"),
     internal_blocks = list(ab = c("a", "b"), bc = c("b", "c"), ac = c("a", "c")),
     capacity = c(ab = 1, bc = 1, ac = 1, a = 1, b = 1, c = 1))
+}
+
+#' The same triangle, at the generator's own capacity rule.
+#'
+#' The unit-capacity triangle answers a question about the structure and
+#' nothing else: at one token a node, three tasks one per block already
+#' separate the relaxation from the optimum, so the row is fractional in every
+#' round it is run. That is the worst case of the structure rather than the
+#' behaviour of the structure, and reading it as the latter would attribute to
+#' the crossing cycle what the tightness did.
+#'
+#' This is the same three blocks sized by `sweep_capacity()` -- a node at 0.6
+#' of the demand expected under its own block, like every generated instance
+#' and like the deployed row -- so the pair separates the two. The matrix is
+#' the same one and is still not totally unimodular, so the theory still
+#' certifies nothing about it; what the sweep then measures is whether the
+#' relaxation is fractional anyway.
+#'
+#' @param n_agents      Agent population the capacities are sized at.
+#' @param lambda        Arrivals per agent per round.
+#' @param bind_fraction Share of its block's expected demand a node carries.
+#' @param leaf_fraction The same for a leaf's own singleton block.
+#' @return A family.
+sweep_triangle_capacity_family <- function(n_agents = 90L, lambda = 1.5,
+                                           bind_fraction = 0.6,
+                                           leaf_fraction = 1.5) {
+  leaves <- c("a", "b", "c")
+  blocks <- list(ab = c("a", "b"), bc = c("b", "c"), ac = c("a", "c"))
+  sweep_family(leaves, blocks,
+               sweep_capacity(leaves, blocks, n_agents, lambda,
+                              bind_fraction, leaf_fraction))
 }
 
 
@@ -463,7 +501,9 @@ sweep_greedy_pack <- function(values, A, capacities) {
 #' @param lambda_l Per-ms value-decay rate.
 #' @param deadlines Integer vector of possible deadlines (ms).
 #' @param onset    The prediction from sweep_onset_prediction().
-#' @return A one-row tibble.
+#' @return A one-row tibble. `n_admit_greedy` and `n_admit_optimum` count the
+#'   tasks each program admitted, the second read off the binary program's own
+#'   0/1 solution rather than inferred from its value.
 sweep_round <- function(family, shares, n_agents, lambda, reserve, base_ms,
                         lambda_l, deadlines, onset) {
   leaves <- family$leaves
@@ -473,7 +513,8 @@ sweep_round <- function(family, shares, n_agents, lambda, reserve, base_ms,
                   gap = 0, integral = TRUE, relative_gap = 0,
                   greedy_value = 0, exactness = 1,
                   binding_node = onset$binding_node,
-                  p_cross_binding = onset$p_cross, binding_crossed = FALSE))
+                  p_cross_binding = onset$p_cross, binding_crossed = FALSE,
+                  n_admit_greedy = 0L, n_admit_optimum = 0L))
   }
   tasks <- tibble(recipe     = sample(leaves, n, replace = TRUE, prob = shares),
                   value_base = stats::runif(n, 1, 2),
@@ -488,7 +529,8 @@ sweep_round <- function(family, shares, n_agents, lambda, reserve, base_ms,
   Ak   <- A[keep, , drop = FALSE]
 
   g <- node_lp_ip_gap(adj[keep], Ak, cap)
-  greedy_value <- sum(adj[keep][sweep_greedy_pack(adj[keep], Ak, cap)])
+  greedy       <- sweep_greedy_pack(adj[keep], Ak, cap)
+  greedy_value <- sum(adj[keep][greedy])
 
   arrivals <- colSums(A)
   tibble(n_tasks = n, n_positive = length(keep),
@@ -500,7 +542,12 @@ sweep_round <- function(family, shares, n_agents, lambda, reserve, base_ms,
          binding_node = onset$binding_node,
          p_cross_binding = onset$p_cross,
          binding_crossed = arrivals[[onset$binding_node]] >
-           cap[[onset$binding_node]])
+           cap[[onset$binding_node]],
+         # How many tasks each program served, beside how much value it got:
+         # a ratio of values says how far the greedy fell short, and these say
+         # over how many admissions, which is what a displacement is counted in.
+         n_admit_greedy  = length(greedy),
+         n_admit_optimum = sum(g$solution > 0.5))
 }
 
 #' The sweep over one instance and one mix.
@@ -588,8 +635,13 @@ sweep_generate <- function(n_leaves, n_internal, bind_fraction = 0.6,
 #' The instance table the sweep branches over.
 #'
 #' The hand-built families go in first -- the three-leaf triangle at unit
-#' capacities, and the shipped T, X and S at their own -- so the sweep's rows
-#' on them can be read against the theory and against the existence block.
+#' capacities and at the generator's own rule, and the shipped T, X and S at
+#' their own -- so the sweep's rows on them can be read against the theory and
+#' against the existence block. The shipped families are taken at the SCALE
+#' size, which is the one the pipeline runs: the small specs are the unit
+#' tests' six-node instance, and a substrate row drawn from them would be a
+#' statement about a fixture rather than about the instances every other number
+#' in the study is measured on.
 #' Random families then fill each stratum to `n_per_stratum` and no further: a
 #' stratum that is already full discards its draws, which keeps the block's
 #' cost at five times the quota rather than at whatever the draw distribution
@@ -610,10 +662,12 @@ sweep_instances <- function(n_per_stratum = 20L, seed = 1L, max_draws = 8000L,
                             bind_fraction = 0.6, leaf_fraction = 1.5) {
   strata <- c("laminar", "one_crossing", "bilaminar_multi",
               "oddcycle_interval", "oddcycle_nonInterval")
-  shipped <- sweep_substrate_families("small")
+  shipped <- sweep_substrate_families("scale")
   named   <- c(list(triangle = sweep_triangle_family()),
                setNames(shipped, paste0("substrate_", names(shipped))),
                list(npubsub_domains = sweep_npubsub_family(
+                 n_agents, lambda, bind_fraction, leaf_fraction)),
+               list(triangle_capacity = sweep_triangle_capacity_family(
                  n_agents, lambda, bind_fraction, leaf_fraction)))
 
   fams  <- named
@@ -664,19 +718,44 @@ sweep_grid <- function(instances, mixes = c("uniform", "skewed")) {
 # Summaries
 # ---------------------------------------------------------------------------
 
+#' The share of the optimum's admissions the greedy did not make.
+#'
+#' A round that admitted nobody displaced nobody, so its share is zero rather
+#' than the nothing-over-nothing the division would give.
+#'
+#' @param n_optimum,n_greedy Admission counts from the same round.
+#' @return Numeric vector on zero to one.
+.sweep_displaced <- function(n_optimum, n_greedy) {
+  ifelse(n_optimum > 0L, (n_optimum - n_greedy) / pmax(n_optimum, 1L), 0)
+}
+
 #' The sweep's reading, per stratum and for each named instance.
 #'
 #' The named instances get their own rows beside the strata because the
-#' question they answer is about them and not about the population they were
-#' drawn from; they stay inside their stratum's row as well, since removing
-#' them would make the stratum's row a statement about generated families only.
+#' question they answer is about them and not about a population: each is a
+#' family built by hand for a reason, at a tightness chosen by hand with it.
+#'
+#' A stratum's row is therefore a statement about the GENERATED families of
+#' that stratum and about nothing else, and `named_excluded` is what makes it
+#' one. Both triangles are in that list, and they are the reason it exists: the
+#' unit-capacity triangle is fractional in every round it runs, so leaving it
+#' inside `oddcycle_nonInterval` would put a hand-built worst case into the
+#' mean that stratum reports and read the tightness as the structure. The
+#' capacity triangle is its control and belongs beside it rather than in the
+#' population either. The shipped and deployed rows are out for the same
+#' reason and not for a different one -- a family somebody built is not a draw
+#' from the distribution the generator samples.
 #'
 #' @param rows  Per-round rows from sweep_run().
 #' @param named Instances reported on their own beside the strata.
+#' @param named_excluded Instances the stratum rows leave out. The whole named
+#'   set by default, so every stratum row is a generated-family mean.
 #' @return One row per stratum and per named instance.
 sweep_summary <- function(rows, named = c("triangle", "substrate_T",
                                           "substrate_X", "substrate_S",
-                                          "npubsub_domains")) {
+                                          "npubsub_domains",
+                                          "triangle_capacity"),
+                          named_excluded = named) {
   measure <- function(d, label) {
     d %>% summarise(
       n_instances = dplyr::n_distinct(instance),
@@ -687,10 +766,14 @@ sweep_summary <- function(rows, named = c("triangle", "substrate_T",
       mean_exactness    = mean(exactness),
       worst_exactness   = min(exactness),
       onset_error = abs(mean(binding_crossed) - mean(p_cross_binding)),
+      mean_admitted = mean(n_admit_optimum),
+      displaced_over_admitted = mean(.sweep_displaced(n_admit_optimum,
+                                                      n_admit_greedy)),
       .groups = "drop") %>%
       mutate(group = label, .before = 1)
   }
-  by_stratum <- rows %>% group_by(stratum, leaf_mix) %>% measure("stratum") %>%
+  by_stratum <- rows %>% filter(!instance %in% named_excluded) %>%
+    group_by(stratum, leaf_mix) %>% measure("stratum") %>%
     rename(label = stratum)
   by_named <- rows %>% filter(instance %in% named) %>%
     group_by(instance, leaf_mix) %>% measure("instance") %>%
@@ -699,6 +782,11 @@ sweep_summary <- function(rows, named = c("triangle", "substrate_T",
 }
 
 #' Every instance's predicates beside what the sweep measured on it.
+#'
+#' `mean_admitted` and `displaced_over_admitted` are appended after the columns
+#' the table already reported: how many tasks the optimum served, and what
+#' share of them the greedy did not, which is the exactness ratio counted in
+#' admissions rather than in value.
 #'
 #' @param rows      Per-round rows from sweep_run().
 #' @param instances The instance table.
@@ -713,6 +801,9 @@ sweep_by_instance <- function(rows, instances) {
               mean_exactness    = mean(exactness),
               worst_exactness   = min(exactness),
               onset_error = abs(mean(binding_crossed) - mean(p_cross_binding)),
+              mean_admitted = mean(n_admit_optimum),
+              displaced_over_admitted = mean(.sweep_displaced(n_admit_optimum,
+                                                              n_admit_greedy)),
               .groups = "drop") %>%
     left_join(select(instances, instance, n_leaves, n_internal, crossing_count,
                      crossing_graph_bipartite, interval_order, tu_verdict),

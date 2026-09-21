@@ -2929,11 +2929,15 @@ node_onset_law <- function(spec, leaf_mix, load_level, N, n_rounds) {
 #' @param A          Task-by-node incidence matrix, tasks in rows.
 #' @param capacities Per-node capacity, in A's column order.
 #' @param tol        Relative tolerance the gap is called closed at.
-#' @return A list of `lp_value`, `ip_value`, `gap` and `integral`.
+#' @return A list of `lp_value`, `ip_value`, `gap` and `integral`, and
+#'   `solution`: the binary program's own 0/1 vector over the tasks, appended
+#'   after the elements the callers already read, so how many tasks the optimum
+#'   served can be counted rather than inferred from its value.
 node_lp_ip_gap <- function(values, A, capacities, tol = 1e-6) {
   n <- length(values)
   if (n == 0L) {
-    return(list(lp_value = 0, ip_value = 0, gap = 0, integral = TRUE))
+    return(list(lp_value = 0, ip_value = 0, gap = 0, integral = TRUE,
+                solution = numeric(0)))
   }
   mat <- rbind(t(A), diag(n))
   rhs <- c(as.numeric(capacities), rep(1, n))
@@ -2946,7 +2950,8 @@ node_lp_ip_gap <- function(values, A, capacities, tol = 1e-6) {
 
   gap <- relaxed$objval - integer$objval
   list(lp_value = relaxed$objval, ip_value = integer$objval, gap = gap,
-       integral = abs(gap) <= tol * max(1, abs(integer$objval)))
+       integral = abs(gap) <= tol * max(1, abs(integer$objval)),
+       solution = integer$solution)
 }
 
 #' Whether a clearing price vector exists for the round.

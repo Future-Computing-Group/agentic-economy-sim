@@ -48,6 +48,30 @@ test_that("a crossing packing separates the relaxation from the optimum", {
   expect_false(g$integral)
 })
 
+test_that("the binary program returns the allocation behind its value", {
+  # How many tasks the optimum served is not recoverable from its value: the
+  # values are drawn per task. The solution vector is returned so the count is
+  # read off the allocation, and it is the allocation the value came from.
+  A <- rbind(c(1, 1, 0), c(0, 1, 1), c(1, 0, 1), c(1, 0, 0))
+  colnames(A) <- c("a", "b", "c")
+  cap <- c(a = 2, b = 1, c = 1)
+  v   <- c(5, 4, 3, 2)
+
+  g <- node_lp_ip_gap(v, A, cap)
+  expect_length(g$solution, length(v))
+  expect_true(all(g$solution %in% c(0, 1)))
+  expect_equal(sum(v * g$solution), g$ip_value)
+  # ... and the allocation it reports is feasible on the same capacities.
+  expect_true(all(as.numeric(crossprod(A, g$solution)) <= cap + 1e-9))
+
+  # An empty round admits nobody, and says so with an empty vector rather than
+  # with a length the caller would have to guess at.
+  empty <- node_lp_ip_gap(numeric(0),
+                          matrix(numeric(0), nrow = 0, ncol = 3,
+                                 dimnames = list(NULL, c("a", "b", "c"))), cap)
+  expect_length(empty$solution, 0L)
+})
+
 test_that("an empty round is trivially integral", {
   g <- node_lp_ip_gap(numeric(0), matrix(numeric(0), nrow = 0, ncol = 2,
                                          dimnames = list(NULL, c("a", "b"))),

@@ -70,13 +70,33 @@ test_that("three pairwise-crossing intervals cross without leaving integrality",
 })
 
 test_that("the shipped instances land where the theory puts them", {
-  fs <- sweep_substrate_families("small")
+  # The SCALE specs, which are the ones the pipeline runs; the small ones are
+  # this suite's own six-node fixture and a substrate row drawn from them would
+  # describe the fixture rather than the study's instances.
+  fs <- sweep_substrate_families("scale")
   expect_equal(fs$T$stratum, "laminar")
   expect_equal(fs$X$stratum, "one_crossing")
   expect_equal(fs$S$stratum, "laminar")
   expect_equal(fs$X$crossing_count, 1L)
+  # The one crossing is the interface X is named for: one edge exports l1 and
+  # l2, the other l2 and l3, and neither block contains the other.
+  expect_setequal(fs$X$blocks$e1, c("l1", "l2"))
+  expect_setequal(fs$X$blocks$e2, c("l2", "l3"))
   expect_true(all(vapply(fs, function(f) f$crossing_graph_bipartite, logical(1))))
+  expect_true(all(vapply(fs, function(f) f$interval_order, logical(1))))
   expect_true(all(vapply(fs, function(f) isTRUE(f$tu_verdict), logical(1))))
+
+  # ... at the token capacities those specs carry, not at a rule of the
+  # sweep's own: the substrate rows are the shipped instances or they are
+  # nothing.
+  specs <- leaf_instance_specs("scale")
+  for (nm in names(fs)) {
+    want <- token_capacity(specs[[nm]])
+    expect_equal(fs[[nm]]$capacity[names(want)], want, info = nm)
+  }
+  expect_equal(unname(token_capacity(specs$X)[c("d", "e1", "e2", "e3",
+                                                "l1", "l2", "l3", "l4")]),
+               c(100, 50, 50, 50, 75, 50, 75, 50))
 })
 
 
@@ -147,10 +167,42 @@ test_that("the generator reaches every stratum and carries the hand-built ones",
               "oddcycle_interval", "oddcycle_nonInterval")) {
     expect_gte(as.integer(counts[[s]]), 2L)
   }
-  expect_true(all(c("triangle", "substrate_T", "substrate_X", "substrate_S")
+  expect_true(all(c("triangle", "triangle_capacity", "substrate_T",
+                    "substrate_X", "substrate_S", "npubsub_domains")
                   %in% inst$instance))
   expect_equal(inst$stratum[inst$instance == "triangle"], "oddcycle_nonInterval")
   expect_equal(inst$stratum[inst$instance == "substrate_X"], "one_crossing")
+  # The substrate rows are the instances the pipeline runs: four leaves, four
+  # internal nodes, not the suite's six-node fixture.
+  expect_equal(inst$n_leaves[inst$instance == "substrate_X"], 4L)
+  expect_equal(inst$n_internal[inst$instance == "substrate_X"], 4L)
+})
+
+test_that("every instance of the sweep gets a total-unimodularity verdict", {
+  # The enumeration's size limit sits above the widest family the generator can
+  # draw, so no instance of the sweep is reported as unknown.
+  inst <- sweep_instances(20L)
+  expect_false(any(is.na(inst$tu_verdict)))
+  expect_equal(nrow(inst), 100L)
+  # Laminar and one-crossing families are unions of at most two laminar
+  # families, whose incidence matrices are totally unimodular; the enumeration
+  # is checked against that rather than trusted on its own.
+  expect_true(all(inst$tu_verdict[inst$stratum %in% c("laminar",
+                                                      "one_crossing")]))
+})
+
+test_that("a round with a positive gap only happens where the verdict is FALSE", {
+  # A strictly fractional relaxation is a submatrix with a determinant outside
+  # 0 and plus or minus 1, so a gap anywhere on an instance and a TRUE verdict
+  # on the same instance cannot both be right.
+  inst <- sweep_instances(n_per_stratum = 3L, seed = 1L, max_draws = 2000L)
+  rows <- bind_rows(lapply(seq_len(nrow(inst)), function(i)
+    sweep_run(inst$family[[i]], inst$instance[i], inst$stratum[i], "uniform",
+              seeds = 1:2, n_rounds = 3L)))
+
+  gapped <- unique(rows$instance[!rows$integral])
+  expect_gt(length(gapped), 0L)
+  expect_false(any(inst$tu_verdict[inst$instance %in% gapped]))
 })
 
 
@@ -162,22 +214,65 @@ test_that("two rounds on the triangle report both instruments", {
                     seeds = 1L, n_rounds = 2L)
   expect_equal(nrow(rows), 2L)
   expect_true(all(c("gap", "integral", "relative_gap", "exactness",
-                    "binding_node", "p_cross_binding", "binding_crossed")
+                    "binding_node", "p_cross_binding", "binding_crossed",
+                    "n_admit_greedy", "n_admit_optimum")
                   %in% names(rows)))
   expect_true(all(rows$gap >= -1e-9))
   expect_true(all(rows$exactness <= 1 + 1e-9))
   # Unit capacities against a hundred-odd arrivals: the triangle's relaxation
   # is fractional and its greedy is inexact, which is why it is in the sweep.
   expect_true(any(!rows$integral))
+  # One task a node at unit capacities, and the greedy takes the same one.
+  expect_equal(rows$n_admit_optimum, c(1L, 1L))
+  expect_equal(rows$n_admit_greedy, c(1L, 1L))
+})
+
+test_that("the admitted counts are the programs' own, not read off their values", {
+  # Values are drawn per task, so a count inferred from a value would be wrong
+  # by construction. The optimum's count comes off its 0/1 solution vector and
+  # its value is that solution's objective.
+  f    <- sweep_substrate_families("scale")$X
+  rows <- sweep_run(f, "substrate_X", "one_crossing", "uniform",
+                    seeds = 1L, n_rounds = 3L)
+  expect_true(all(rows$n_admit_optimum > 0L))
+  expect_true(all(rows$n_admit_greedy <= rows$n_admit_optimum))
+  expect_true(all(rows$n_admit_optimum <= rows$n_positive))
+  # A laminar-plus-one-set family is integral, and its greedy is not thereby
+  # optimal, so the two counts are two measurements.
+  expect_true(all(rows$integral))
 })
 
 test_that("a laminar family keeps its guarantees over a run", {
-  fs   <- sweep_substrate_families("small")
+  fs   <- sweep_substrate_families("scale")
   rows <- sweep_run(fs$T, instance = "substrate_T", stratum = "laminar",
                     leaf_mix = "skewed", seeds = 1:2, n_rounds = 3L)
   expect_equal(nrow(rows), 6L)
   expect_true(all(rows$integral))
   expect_true(all(rows$relative_gap < 1e-9))
+})
+
+test_that("the triangle is in the sweep at both capacity rules", {
+  # The same three crossing blocks at two tightnesses. Neither is totally
+  # unimodular, so the theory certifies nothing about either; what separates
+  # them is the capacity rule, and the pair is what keeps the unit-capacity
+  # row from being read as the behaviour of the structure.
+  cap <- sweep_triangle_capacity_family()
+  expect_equal(cap$stratum, "oddcycle_nonInterval")
+  expect_equal(cap$crossing_count, 3L)
+  expect_false(cap$tu_verdict)
+  # The generated instances' own rule: a node at 0.6 of the demand expected
+  # under its block, which at three leaves and the high-load rate is 54.
+  expect_equal(unname(cap$capacity[["ab"]]), 54)
+
+  for (mix in c("uniform", "skewed")) {
+    unit <- sweep_run(sweep_triangle_family(), "triangle",
+                      "oddcycle_nonInterval", mix, seeds = 1:3, n_rounds = 5L)
+    big  <- sweep_run(cap, "triangle_capacity", "oddcycle_nonInterval", mix,
+                      seeds = 1:3, n_rounds = 5L)
+    expect_true(all(!unit$integral), info = mix)
+    expect_true(all(big$integral), info = mix)
+    expect_lt(max(big$gap), 1e-9)
+  }
 })
 
 
@@ -225,32 +320,56 @@ test_that("the grid is one branch per instance and mix, seeds looped inside", {
 })
 
 test_that("the summaries report the strata, the named rows and the predicates", {
-  fs <- sweep_substrate_families("small")
-  inst <- tibble(instance = c("substrate_T", "triangle"),
-                 n_leaves = c(3L, 3L), n_internal = c(3L, 3L),
-                 crossing_count = c(0L, 3L),
-                 crossing_graph_bipartite = c(TRUE, FALSE),
-                 interval_order = c(TRUE, FALSE),
-                 tu_verdict = c(TRUE, FALSE),
-                 stratum = c("laminar", "oddcycle_nonInterval"))
+  fs <- sweep_substrate_families("scale")
+  inst <- tibble(instance = c("substrate_T", "triangle", "gen_001", "gen_002"),
+                 n_leaves = c(4L, 3L, 4L, 3L), n_internal = c(4L, 3L, 4L, 3L),
+                 crossing_count = c(0L, 3L, 0L, 3L),
+                 crossing_graph_bipartite = c(TRUE, FALSE, TRUE, FALSE),
+                 interval_order = c(TRUE, FALSE, TRUE, FALSE),
+                 tu_verdict = c(TRUE, FALSE, TRUE, FALSE),
+                 stratum = c("laminar", "oddcycle_nonInterval",
+                             "laminar", "oddcycle_nonInterval"))
+  one <- function(f, nm, st) sweep_run(f, nm, st, "uniform", seeds = 1L,
+                                       n_rounds = 3L)
   rows <- bind_rows(
-    sweep_run(fs$T, "substrate_T", "laminar", "uniform", seeds = 1L, n_rounds = 3L),
-    sweep_run(sweep_triangle_family(), "triangle", "oddcycle_nonInterval",
-              "uniform", seeds = 1L, n_rounds = 3L))
+    one(fs$T, "substrate_T", "laminar"),
+    one(sweep_triangle_family(), "triangle", "oddcycle_nonInterval"),
+    one(fs$S, "gen_001", "laminar"),
+    one(sweep_triangle_capacity_family(), "gen_002", "oddcycle_nonInterval"))
 
   s <- sweep_summary(rows)
   expect_setequal(s$label, c("laminar", "oddcycle_nonInterval",
                              "substrate_T", "triangle"))
   expect_true(all(c("n_instances", "n_rounds", "fraction_positive_gap",
                     "mean_relative_gap", "max_relative_gap", "mean_exactness",
-                    "worst_exactness", "onset_error") %in% names(s)))
+                    "worst_exactness", "onset_error", "mean_admitted",
+                    "displaced_over_admitted") %in% names(s)))
+  expect_equal(names(s)[(ncol(s) - 1L):ncol(s)],
+               c("mean_admitted", "displaced_over_admitted"))
   expect_equal(s$fraction_positive_gap[s$label == "laminar"], 0)
   expect_gt(s$fraction_positive_gap[s$label == "triangle"], 0)
 
+  # The hand-built rows are out of the stratum rows, so a stratum's numbers are
+  # the generated families' and the unit-capacity triangle cannot carry its own
+  # stratum's mean.
+  expect_equal(s$n_instances[s$label == "laminar"], 1L)
+  expect_equal(s$n_instances[s$label == "oddcycle_nonInterval"], 1L)
+  expect_equal(s$fraction_positive_gap[s$label == "oddcycle_nonInterval"], 0)
+  # ... and naming nothing puts them back, so the exclusion is one switch.
+  s_in <- sweep_summary(rows, named_excluded = character(0))
+  expect_equal(s_in$n_instances[s_in$label == "oddcycle_nonInterval"], 2L)
+  expect_gt(s_in$fraction_positive_gap[s_in$label == "oddcycle_nonInterval"], 0)
+
   b <- sweep_by_instance(rows, inst)
-  expect_equal(nrow(b), 2L)
+  expect_equal(nrow(b), 4L)
   expect_true(all(c("crossing_count", "tu_verdict", "mean_exactness",
                     "worst_exactness", "onset_error") %in% names(b)))
+  expect_equal(names(b)[(ncol(b) - 1L):ncol(b)],
+               c("mean_admitted", "displaced_over_admitted"))
   expect_equal(b$crossing_count[b$instance == "triangle"], 3L)
   expect_equal(b$mean_exactness[b$instance == "substrate_T"], 1)
+  # One task a round at unit capacities, and no displacement in it.
+  expect_equal(b$mean_admitted[b$instance == "triangle"], 1)
+  expect_equal(b$displaced_over_admitted[b$instance == "triangle"], 0)
+  expect_gt(b$mean_admitted[b$instance == "gen_002"], 1)
 })
