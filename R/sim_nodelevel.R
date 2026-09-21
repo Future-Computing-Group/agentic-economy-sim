@@ -1937,6 +1937,35 @@ node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
     TRUE ~ FALSE)
 }
 
+#' The level a mechanism's own knob was run at.
+#'
+#' @param mechanism      The arm.
+#' @param p_post_k       Its posted level.
+#' @param reserve_markup Its reserve markup.
+#' @return Numeric vector.
+.knob_level <- function(mechanism, p_post_k, reserve_markup) {
+  ifelse(mechanism == "posted_price", p_post_k, reserve_markup)
+}
+
+#' Does a Student t interval for a paired difference cover zero.
+#'
+#' Two pairs are the fewest that have a spread at all, so below that the answer
+#' is NA rather than a verdict read off one number. A difference that is the
+#' same on every seed has no spread either, and then the interval is the point
+#' itself: zero exactly, or not zero at all.
+#'
+#' @param d Paired differences, one per tuning seed.
+#' @return TRUE, FALSE, or NA below two usable pairs.
+.paired_t_covers_zero <- function(d) {
+  d <- d[is.finite(d)]
+  n <- length(d)
+  if (n < 2L) return(NA)
+  s <- stats::sd(d)
+  if (!is.finite(s)) return(NA)
+  if (s == 0) return(mean(d) == 0)
+  abs(mean(d)) <= stats::qt(0.975, n - 1L) * s / sqrt(n)
+}
+
 #' Was the tuning welfare flat beside the chosen knob.
 #'
 #' A knob on the edge of its grid is grid-limited only where welfare was still
@@ -1945,34 +1974,61 @@ node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
 #' inside rather than a censored one, and the cell is a flat response rather
 #' than a grid drawn too narrow. The two flags are two questions.
 #'
-#' The neighbours are read off the tuning frame itself rather than off the knob
-#' vectors, so a level a cell never ran cannot be counted as one; the nearest
-#' on either side counts, which for a knob on the edge is the one inward. The
-#' comparison is relative: two welfares within a millionth of each other, two
-#' zeroes included, are the same number at this resolution.
+#' Same on the tuning seeds is a statistical statement and not an arithmetic
+#' one. The welfare a cell reports is a mean over the tuning seeds, so the
+#' question is whether the difference between the chosen knob and the level
+#' beside it is separable from the spread those seeds already have. A fixed
+#' relative tolerance cannot ask that. On this block's fourteen grid-edge rows
+#' six pairs of neighbouring means coincide to the last digit and the other
+#' eight differ by five hundred-thousandths to five thousandths of the
+#' welfare: a millionth separates exactly those two groups and nothing else,
+#' while six of the eight sit inside the spread the five tuning seeds already
+#' have.
+#'
+#' The criterion is therefore the paired difference's own interval: the
+#' difference is taken seed by seed, which cancels whatever the seed did to
+#' both levels at once, and the knob is flat when a Student t interval at 95
+#' per cent over those differences covers zero. Below two seeds there is no
+#' spread to take an interval over and the answer is NA.
+#'
+#' The neighbour is read off the tuning frame itself rather than off the knob
+#' vectors, so a level a cell never ran cannot be counted as one, and it is the
+#' one INWARD: for a knob on an edge that is the only neighbour it has, and for
+#' one inside the grid it is the neighbour on the side the grid has more of.
 #'
 #' @param tuned      The tuned rows, each carrying the knob it was run at.
 #' @param tuning_raw Per-seed results of the tuning grid, or NULL where the
 #'   caller has none.
 #' @param cell_vars  The variables a knob was chosen inside.
 #' @return Logical vector: FALSE for an arm with no knob to be flat around, NA
-#'   where there is no tuning frame to read the neighbours off.
+#'   where there is no tuning frame to read the neighbour off or too few seeds
+#'   to take an interval over.
 node_knob_flat <- function(tuned, tuning_raw, cell_vars) {
-  if (is.null(tuning_raw)) return(rep(NA, nrow(tuned)))
+  if (is.null(tuning_raw) || !"seed" %in% names(tuning_raw)) {
+    return(rep(NA, nrow(tuned)))
+  }
   keys <- c(intersect(cell_vars, names(tuning_raw)), "mechanism")
-  same <- function(a, b) !is.na(b) & abs(a - b) <= 1e-6 * pmax(abs(a), abs(b))
-  flat <- tuning_raw %>%
-    group_by(across(all_of(c(keys, "p_post_k", "reserve_markup")))) %>%
-    summarise(tuning_welfare = mean(welfare, na.rm = TRUE), .groups = "drop") %>%
-    group_by(across(all_of(keys))) %>%
-    arrange(ifelse(mechanism == "posted_price", p_post_k, reserve_markup),
-            .by_group = TRUE) %>%
-    mutate(knob_flat = same(tuning_welfare, dplyr::lag(tuning_welfare)) |
-             same(tuning_welfare, dplyr::lead(tuning_welfare))) %>%
-    ungroup() %>%
-    select(all_of(c(keys, "p_post_k", "reserve_markup", "knob_flat")))
-  out <- left_join(tuned, flat,
-                   by = c(keys, "p_post_k", "reserve_markup"))$knob_flat
+  per_seed <- tuning_raw %>%
+    mutate(.knob = .knob_level(mechanism, p_post_k, reserve_markup)) %>%
+    group_by(across(all_of(c(keys, ".knob", "seed")))) %>%
+    summarise(.welfare = mean(welfare, na.rm = TRUE), .groups = "drop")
+  cell <- function(d) do.call(paste, c(lapply(keys, function(k) d[[k]]),
+                                       list(sep = "\r")))
+  by_cell <- split(per_seed, cell(per_seed))
+
+  want  <- cell(tuned)
+  knobs <- .knob_level(tuned$mechanism, tuned$p_post_k, tuned$reserve_markup)
+  out <- vapply(seq_len(nrow(tuned)), function(i) {
+    d <- by_cell[[want[[i]]]]
+    if (is.null(d)) return(NA)
+    lv <- sort(unique(d$.knob))
+    j  <- which(abs(lv - knobs[[i]]) <= 1e-9)
+    if (length(j) != 1L || length(lv) < 2L) return(NA)
+    k  <- if (j <= length(lv) / 2) j + 1L else j - 1L
+    at <- d[abs(d$.knob - lv[[j]]) <= 1e-9, ]
+    nb <- d[abs(d$.knob - lv[[k]]) <= 1e-9, ]
+    .paired_t_covers_zero(at$.welfare - nb$.welfare[match(at$seed, nb$seed)])
+  }, logical(1))
   # An arm with nothing to tune has no neighbour to be flat against.
   ifelse(tuned$mechanism %in% c("posted_price", "market", "market_cc"),
          out, FALSE)

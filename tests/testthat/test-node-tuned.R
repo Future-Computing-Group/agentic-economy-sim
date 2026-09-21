@@ -280,6 +280,63 @@ test_that("the tuned table says whether the tuning welfare was flat there", {
                c("knob_at_boundary", "knob_flat"))
 })
 
+# Whether the welfare beside a knob moved is a question about seeds, and a
+# fixed relative tolerance cannot ask it: at five tuning seeds a difference of
+# a thousandth of the welfare is inside the spread the seeds already have, and
+# a difference of a millionth is a different number to a tolerance that stops
+# there. The criterion is the paired difference's own interval across seeds.
+#
+# Two cells, both choosing the bottom of the grid. One falls by a unit a level
+# with almost no spread; the other falls by a thousandth against a spread of
+# one. The seed swing sums to zero at every level, so the argmax is the slope's
+# and the noise decides only the interval.
+.t_paired_tuning_raw <- function(seeds = 1:5) {
+  lv    <- sort(node_tuning_posted_levels())
+  swing <- c(-1, -0.5, 0, 0.5, 1)
+  tidyr::expand_grid(graph_type = c("steep", "level"), load_level = "high",
+                     architecture = "naive", mechanism = "posted_price",
+                     p_post_k = lv, reserve_markup = 1, seed = seeds) %>%
+    dplyr::mutate(welfare =
+      -ifelse(graph_type == "steep", 1, 0.001) * match(p_post_k, lv) +
+       ifelse(graph_type == "steep", 0.001, 0.5) *
+         (-1)^match(p_post_k, lv) * swing[match(seed, seeds)])
+}
+
+test_that("flatness is the paired difference's interval, not a tolerance", {
+  tr    <- .t_paired_tuning_raw()
+  tuned <- node_tuned_table(.flat_eval_raw(tr), tr)
+  flat  <- setNames(tuned$knob_flat, tuned$graph_type)
+
+  # Both cells chose the smallest level the grid offered, so both sit on the
+  # edge and the flatness flag is what separates them.
+  expect_true(all(tuned$p_post_k == min(node_tuning_posted_levels())))
+  expect_true(all(tuned$knob_at_boundary))
+  # A step of a thousandth against a seed spread of one is a difference the
+  # interval cannot hold away from zero; a step of one against a spread of a
+  # thousandth is a response the grid cut off while it was still moving.
+  expect_true(flat[["level"]])
+  expect_false(flat[["steep"]])
+
+  # Neither difference is zero to a millionth, so the old relative tolerance
+  # would have called both of them moving.
+  mean_at <- function(g, k) mean(tr$welfare[tr$graph_type == g &
+                                              tr$p_post_k == k])
+  lv <- sort(node_tuning_posted_levels())
+  for (g in c("steep", "level")) {
+    d <- abs(mean_at(g, lv[1]) - mean_at(g, lv[2]))
+    expect_gt(d, 1e-6 * abs(mean_at(g, lv[1])))
+  }
+})
+
+test_that("one tuning seed answers the flatness question with NA", {
+  # An interval needs a spread, and one seed has none to give. NA says the
+  # question could not be asked rather than reporting a plateau or a slope.
+  tr    <- .t_paired_tuning_raw(seeds = 1L)
+  tuned <- node_tuned_table(.flat_eval_raw(tr), tr)
+  expect_equal(nrow(tuned), 2L)
+  expect_true(all(is.na(tuned$knob_flat)))
+})
+
 test_that("a knob with no neighbour and no tuning frame is not called flat", {
   tr    <- .flat_tuning_raw()
   tuned <- node_tuned_table(.boundary_eval_raw(), tr)
