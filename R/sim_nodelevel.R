@@ -1930,19 +1930,64 @@ node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
     TRUE ~ FALSE)
 }
 
+#' Was the tuning welfare flat beside the chosen knob.
+#'
+#' A knob on the edge of its grid is grid-limited only where welfare was still
+#' moving when the grid ran out. Where the chosen knob and the level next to it
+#' score the same on the tuning seeds, the maximum is a plateau the tie broke
+#' inside rather than a censored one, and the cell is a flat response rather
+#' than a grid drawn too narrow. The two flags are two questions.
+#'
+#' The neighbours are read off the tuning frame itself rather than off the knob
+#' vectors, so a level a cell never ran cannot be counted as one; the nearest
+#' on either side counts, which for a knob on the edge is the one inward. The
+#' comparison is relative: two welfares within a millionth of each other, two
+#' zeroes included, are the same number at this resolution.
+#'
+#' @param tuned      The tuned rows, each carrying the knob it was run at.
+#' @param tuning_raw Per-seed results of the tuning grid, or NULL where the
+#'   caller has none.
+#' @param cell_vars  The variables a knob was chosen inside.
+#' @return Logical vector: FALSE for an arm with no knob to be flat around, NA
+#'   where there is no tuning frame to read the neighbours off.
+node_knob_flat <- function(tuned, tuning_raw, cell_vars) {
+  if (is.null(tuning_raw)) return(rep(NA, nrow(tuned)))
+  keys <- c(intersect(cell_vars, names(tuning_raw)), "mechanism")
+  same <- function(a, b) !is.na(b) & abs(a - b) <= 1e-6 * pmax(abs(a), abs(b))
+  flat <- tuning_raw %>%
+    group_by(across(all_of(c(keys, "p_post_k", "reserve_markup")))) %>%
+    summarise(tuning_welfare = mean(welfare, na.rm = TRUE), .groups = "drop") %>%
+    group_by(across(all_of(keys))) %>%
+    arrange(ifelse(mechanism == "posted_price", p_post_k, reserve_markup),
+            .by_group = TRUE) %>%
+    mutate(knob_flat = same(tuning_welfare, dplyr::lag(tuning_welfare)) |
+             same(tuning_welfare, dplyr::lead(tuning_welfare))) %>%
+    ungroup() %>%
+    select(all_of(c(keys, "p_post_k", "reserve_markup", "knob_flat")))
+  out <- left_join(tuned, flat,
+                   by = c(keys, "p_post_k", "reserve_markup"))$knob_flat
+  # An arm with nothing to tune has no neighbour to be flat against.
+  ifelse(tuned$mechanism %in% c("posted_price", "market", "market_cc"),
+         out, FALSE)
+}
+
 #' What each mechanism reaches at its tuned knob, on the held-out seeds.
 #'
-#' `knob_at_boundary` is appended after the columns the table already reported,
-#' so a caller that reads it by name keeps reading what it read before.
+#' `knob_at_boundary` and `knob_flat` are appended after the columns the table
+#' already reported, so a caller that reads it by name keeps reading what it
+#' read before. The flatness is read off the tuning frame the knob was chosen
+#' on, so a caller with no such frame gets NA there rather than a response
+#' that was never measured.
 #'
-#' @param eval_raw  Per-seed results of the evaluation grid.
-#' @param cell_vars The variables a knob was chosen inside.
+#' @param eval_raw   Per-seed results of the evaluation grid.
+#' @param tuning_raw Per-seed results of the tuning grid, or NULL.
+#' @param cell_vars  The variables a knob was chosen inside.
 #' @return One row per cell and mechanism.
-node_tuned_table <- function(eval_raw,
+node_tuned_table <- function(eval_raw, tuning_raw = NULL,
                              cell_vars = intersect(
                                c("graph_type", "load_level", "architecture",
                                  "congestion"), names(eval_raw))) {
-  eval_raw %>%
+  tuned <- eval_raw %>%
     group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
     summarise(p_post_k             = .one_of(p_post_k),
               reserve_markup       = .one_of(reserve_markup),
@@ -1954,6 +1999,8 @@ node_tuned_table <- function(eval_raw,
               .groups = "drop") %>%
     mutate(knob_at_boundary = node_knob_at_boundary(mechanism, p_post_k,
                                                     reserve_markup))
+  tuned$knob_flat <- node_knob_flat(tuned, tuning_raw, cell_vars)
+  tuned
 }
 
 

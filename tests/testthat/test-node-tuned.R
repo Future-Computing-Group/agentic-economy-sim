@@ -121,7 +121,7 @@ test_that("the tuned table reports the evaluation numbers at the chosen knob", {
                   c("graph_type", "load_level", "architecture", "mechanism",
                     "p_post_k", "reserve_markup", "n_eval_seeds", "welfare",
                     "tokens_admitted", "median_latency", "welfare_over_optimum",
-                    "knob_at_boundary"))
+                    "knob_at_boundary", "knob_flat"))
   expect_true(all(tuned$n_eval_seeds == 2L))
   expect_true(all(tuned$welfare == 21.5))
   expect_equal(tuned$p_post_k[tuned$mechanism == "posted_price"], c(1.5, 1.5))
@@ -230,6 +230,71 @@ test_that("the tuned table says whether the chosen knob sat on the grid's edge",
   # An arm with nothing to tune has no edge to sit on.
   expect_false(at[["k8s"]])
   # The column is appended; every column the table already reported is intact.
-  expect_equal(names(tuned)[length(names(tuned))], "knob_at_boundary")
+  expect_equal(names(tuned)[ncol(tuned) - 1L], "knob_at_boundary")
   expect_true(all(tuned$welfare == 21.5))
+})
+
+
+# ---- was the welfare beside the chosen knob flat ---------------------------
+#
+# A knob on the edge of its grid is grid-limited only where welfare was still
+# moving when the grid ran out. Where the chosen knob and the level next to it
+# score the same on the tuning seeds, the maximum is a plateau the tie broke
+# inside, and reporting that cell as grid-limited would claim a censored
+# maximum the tuning frame does not show. The two flags are two questions and
+# the table answers both.
+
+.flat_tuning_raw <- function() {
+  tidyr::expand_grid(graph_type = c("tree", "sp"), load_level = "high",
+                     architecture = "naive", mechanism = "posted_price",
+                     p_post_k = node_tuning_posted_levels(),
+                     reserve_markup = 1, seed = 1:2) %>%
+    # tree: every level scores the same, so the argmax is the whole grid and
+    # the tie resolves inside a plateau. sp: welfare is still rising at the
+    # bottom of the grid when it runs out.
+    dplyr::mutate(welfare = ifelse(graph_type == "tree", 1, -p_post_k))
+}
+
+.flat_eval_raw <- function(tuning_raw) {
+  node_eval_grid(tuning_raw, c(11L, 12L)) %>%
+    dplyr::filter(mechanism == "posted_price") %>%
+    dplyr::mutate(welfare = 10 + seed, tokens_admitted = 50,
+                  median_latency = 200, welfare_over_optimum = 0.4)
+}
+
+test_that("the tuned table says whether the tuning welfare was flat there", {
+  tr    <- .flat_tuning_raw()
+  tuned <- node_tuned_table(.flat_eval_raw(tr), tr)
+  flat  <- setNames(tuned$knob_flat, tuned$graph_type)
+
+  # Both cells chose the smallest level the grid offered, so both sit on the
+  # edge; only one of them was still climbing when it got there.
+  expect_true(all(tuned$p_post_k == min(node_tuning_posted_levels())))
+  expect_true(all(tuned$knob_at_boundary))
+  expect_true(flat[["tree"]])
+  expect_false(flat[["sp"]])
+  # Appended after the flag it qualifies; every column before it is intact.
+  expect_equal(names(tuned)[(ncol(tuned) - 1):ncol(tuned)],
+               c("knob_at_boundary", "knob_flat"))
+})
+
+test_that("a knob with no neighbour and no tuning frame is not called flat", {
+  tr    <- .flat_tuning_raw()
+  tuned <- node_tuned_table(.boundary_eval_raw(), tr)
+  flat  <- setNames(tuned$knob_flat, tuned$mechanism)
+
+  # An arm with nothing to tune has no neighbour to be flat against.
+  expect_false(flat[["k8s"]])
+  # An arm the tuning frame never ran cannot be answered for, and NA says so
+  # rather than reporting a response that was never measured.
+  expect_true(is.na(flat[["market"]]))
+  # Without a tuning frame the question cannot be asked at all.
+  expect_true(all(is.na(node_tuned_table(.boundary_eval_raw())$knob_flat)))
+})
+
+test_that("the pipeline hands the tuned table the frame the knobs were chosen on", {
+  src <- paste(readLines(here::here("_targets.R")), collapse = " ")
+  expect_true(grepl(
+    "node_tuned_table\\(\\s*bind_rows\\(node_exp6_eval_raw\\),\\s*bind_rows\\(node_exp6_tuning_raw\\)\\s*\\)",
+    src, perl = TRUE))
 })

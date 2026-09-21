@@ -903,8 +903,13 @@ list(
     pattern   = map(node_exp6_eval_grid),
     iteration = "vector"
   ),
+  # The tuning frame travels with the evaluation results: whether the welfare
+  # beside a chosen knob was flat is a property of the frame the knob was
+  # chosen on, and it is what separates a knob the grid limited from one the
+  # tie broke inside a plateau.
   tar_target(node_exp6_tuned,
-             node_tuned_table(bind_rows(node_exp6_eval_raw))),
+             node_tuned_table(bind_rows(node_exp6_eval_raw),
+                              bind_rows(node_exp6_tuning_raw))),
 
   # -- the sensitivity beside the numbers, not after them -------------------
   # One factor at a time from the headline setting, plus the queue term
