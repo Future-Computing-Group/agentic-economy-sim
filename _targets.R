@@ -839,10 +839,13 @@ list(
     pattern   = map(node_exp6_param_grid),
     iteration = "vector"
   ),
+  # The congestion level is a factor of the design: every arm runs at both, so
+  # a table grouped without it averages the two queue terms into a setting no
+  # cell was run at.
   tar_target(node_exp6_summary_table,
              node_aggregate(node_exp6_results_raw,
                             c("mechanism", "p_post_k", "architecture",
-                              "graph_type", "load_level"))),
+                              "graph_type", "load_level", "congestion"))),
   tar_target(node_stats_exp6, stat_exp6(bind_rows(node_exp6_results_raw))),
   # Every arm as a point in the posted family's own plane, so the comparison
   # is read at matched congestion rather than at whatever volume each arm

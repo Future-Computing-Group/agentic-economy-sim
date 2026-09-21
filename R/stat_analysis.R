@@ -836,40 +836,53 @@ stat_exp6 <- function(raw_df) {
   # either, so the label reduces to the mechanism name and a store written
   # before those arms still analyses.
   if (!"p_post_k" %in% names(raw_df)) raw_df$p_post_k <- NA_real_
+  # The congestion level the arms were run at is a cell factor for the same
+  # reason the architecture is: every arm runs at both levels, and a cell that
+  # pooled them would compare mechanisms across two different queue terms and
+  # report the mixture as one arm. A store written before the level carries no
+  # level, so the label and the model reduce to what they were.
+  if (!"congestion" %in% names(raw_df)) raw_df$congestion <- NA_character_
   raw_df <- raw_df %>%
     mutate(mechanism = ifelse(mechanism == "posted_price",
                               paste0(mechanism, "_k", p_post_k), mechanism))
+  cell_name <- function(...) paste(stats::na.omit(c(...)), collapse = "_")
 
-  # Per topology x load x architecture: mechanism effect. Architecture is a
-  # cell factor, not a nuisance dimension to pool over: one test per cell runs
-  # on mechanisms x seeds observations, which is the design the paper states.
+  # Per topology x load x architecture x congestion: mechanism effect. One
+  # test per cell runs on mechanisms x seeds observations, which is the design
+  # the paper states.
   by_tl <- raw_df %>%
-    group_by(graph_type, load_level, architecture) %>%
+    group_by(graph_type, load_level, architecture, congestion) %>%
     group_split() %>%
-    setNames(., sapply(., function(d) paste(d$graph_type[1], d$load_level[1],
-                                            d$architecture[1], sep = "_")))
+    setNames(., sapply(., function(d) cell_name(d$graph_type[1],
+                                                d$load_level[1],
+                                                d$architecture[1],
+                                                d$congestion[1])))
 
   per_tl <- lapply(by_tl, function(d) {
     stat_summary_single_factor(d, "mechanism", metrics)
   })
 
-  # Per architecture: mechanism effect (collapsed across topology and load)
+  # Per architecture and level: mechanism effect (collapsed across topology
+  # and load, never across the queue term the arms were compared under)
   by_arch <- raw_df %>%
-    group_by(architecture) %>%
+    group_by(architecture, congestion) %>%
     group_split() %>%
-    setNames(., sapply(., function(d) d$architecture[1]))
+    setNames(., sapply(., function(d) cell_name(d$architecture[1],
+                                                d$congestion[1])))
 
   per_arch <- lapply(by_arch, function(d) {
     stat_summary_single_factor(d, "mechanism", metrics)
   })
 
-  # Interaction: mechanism x topology x load x architecture
+  # Interaction: mechanism x topology x load x architecture, crossed with the
+  # congestion level wherever more than one was run.
+  terms <- c("mechanism", "graph_type", "load_level", "architecture")
+  if (dplyr::n_distinct(stats::na.omit(raw_df$congestion)) > 1L) {
+    terms <- c(terms, "congestion")
+  }
   interaction <- art_anova(
-    raw_df %>% mutate(mechanism = factor(mechanism),
-                      architecture = factor(architecture),
-                      graph_type = factor(graph_type),
-                      load_level = factor(load_level)),
-    welfare ~ mechanism * graph_type * load_level * architecture
+    raw_df %>% mutate(across(all_of(terms), factor)),
+    stats::reformulate(paste(terms, collapse = " * "), response = "welfare")
   )
 
   list(per_topo_load = per_tl, per_architecture = per_arch,
