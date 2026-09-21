@@ -993,6 +993,29 @@ list(
   tar_target(node_exp6_shock_summary,
              node_shock_summary(bind_rows(node_exp6_shock))),
 
+  # -- does a clearing price exist for the round at all ---------------------
+  # Prior to whether the walk finds one: the round's packing is relaxed and
+  # solved twice, and an anonymous linear price supports an allocation only
+  # where the two optima agree. Off the market, on the offered demand.
+  tar_target(node_exp6_existence_grid, node_existence_grid(n_seeds)),
+  tar_target(
+    node_exp6_existence,
+    node_existence_run(
+      graph_type       = node_exp6_existence_grid$graph_type,
+      leaf_mix         = node_exp6_existence_grid$leaf_mix,
+      load_level       = "high",
+      N                = node_agent_counts[[node_exp6_existence_grid$graph_type]],
+      seed             = node_exp6_existence_grid$seed,
+      n_rounds         = 20L,
+      deadlines        = task_deadlines,
+      lambda_l_default = node_lambda
+    ),
+    pattern   = map(node_exp6_existence_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_existence_summary,
+             node_existence_summary(bind_rows(node_exp6_existence))),
+
   tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
   tar_target(
     node_exp6_sensitivity,

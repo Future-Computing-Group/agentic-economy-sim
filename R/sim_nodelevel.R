@@ -2728,3 +2728,158 @@ node_onset_law <- function(spec, leaf_mix, load_level, N, n_rounds) {
                    expected_crossings = n_rounds * p[[v]])
   })
 }
+
+
+# ===========================================================================
+# Existence of clearing prices: the LP certificate
+# ===========================================================================
+
+#' The relaxation gap of a packing, and whether it closes.
+#'
+#' Under linear anonymous node prices and single-bundle unit demand a task
+#' wants every node on its path or none of it, so the round's admission
+#' problem is a 0/1 packing over the node capacities. A price vector supports
+#' an allocation exactly when that allocation solves the packing AND the
+#' relaxation of the packing is solved by the same allocation: prices are the
+#' dual variables of the relaxed program, and complementary slackness at an
+#' integral primal optimum is the statement that no task wants a bundle it
+#' cannot get. A strictly fractional relaxation therefore has no supporting
+#' anonymous linear price, whatever process is run at it.
+#'
+#' Both problems are solved on the SAME matrix, one relaxed and one binary, so
+#' the difference between them is the integrality gap and nothing else. The
+#' unit upper bounds are identity rows because `lp()` takes no bounds
+#' argument; they are redundant under `all.bin` and are kept so that the two
+#' solves see one feasible region.
+#'
+#' The exact leaf-block optimum is NOT reused for the integer value: it works
+#' in token coordinates on per-leaf marginals and is exact on the leaf-block
+#' region rather than on an arbitrary 0/1 packing, so reusing it would compare
+#' two different programs and attribute their difference to integrality.
+#'
+#' @param values     Per-task objective coefficients.
+#' @param A          Task-by-node incidence matrix, tasks in rows.
+#' @param capacities Per-node capacity, in A's column order.
+#' @param tol        Relative tolerance the gap is called closed at.
+#' @return A list of `lp_value`, `ip_value`, `gap` and `integral`.
+node_lp_ip_gap <- function(values, A, capacities, tol = 1e-6) {
+  n <- length(values)
+  if (n == 0L) {
+    return(list(lp_value = 0, ip_value = 0, gap = 0, integral = TRUE))
+  }
+  mat <- rbind(t(A), diag(n))
+  rhs <- c(as.numeric(capacities), rep(1, n))
+  dir <- rep("<=", length(rhs))
+
+  relaxed <- lpSolve::lp("max", values, mat, dir, rhs)
+  integer <- lpSolve::lp("max", values, mat, dir, rhs, all.bin = TRUE)
+  stopifnot("the round's packing did not solve" =
+              relaxed$status == 0L && integer$status == 0L)
+
+  gap <- relaxed$objval - integer$objval
+  list(lp_value = relaxed$objval, ip_value = integer$objval, gap = gap,
+       integral = abs(gap) <= tol * max(1, abs(integer$objval)))
+}
+
+#' Whether a clearing price vector exists for the round.
+#'
+#' A task is worth its zero-queue true value and its bundle costs the common
+#' reserve at every node on its path, so what it can pay above the floor is
+#' the reserve-adjusted value. A task that cannot cover its own bundle at the
+#' floor is demanded at no admissible price and is dropped from both programs;
+#' keeping it would put a task nobody would serve into the packing and read
+#' its exclusion as a rationing.
+#'
+#' @param tasks   The round's tasks, carrying a `recipe` column.
+#' @param env     Environment whose capacities define the region.
+#' @param v_true  Per-task true zero-queue value.
+#' @param reserve The common per-node floor prices are clamped to.
+#' @return A one-row tibble; `profile` holds the tasks behind a gap, or NULL.
+node_existence_certificate <- function(tasks, env, v_true, reserve) {
+  cap  <- tier_capacities(env)
+  A    <- task_recipes(tasks, env)[, cap$tier, drop = FALSE]
+  adj  <- as.numeric(v_true) - reserve * rowSums(A)
+  keep <- which(adj > 0)
+
+  g <- node_lp_ip_gap(adj[keep], A[keep, , drop = FALSE], cap$capacity)
+  tibble(n_tasks = nrow(tasks), n_positive = length(keep),
+         lp_value = g$lp_value, ip_value = g$ip_value, gap = g$gap,
+         integral = g$integral,
+         profile = list(
+           if (g$integral) NULL
+           else tibble(adjusted_value = adj[keep],
+                       leaf = as.character(tasks$recipe)[keep])))
+}
+
+#' The certificate over a run of rounds.
+#'
+#' The same generator the market arms are fed by, with no market and no trust
+#' update: the question is whether the demand the round OFFERS admits a
+#' clearing price, so an arm's own admission and the state it carries have no
+#' place in it. Values are the zero-queue true values the reference optima are
+#' computed on, off the market like they are.
+#'
+#' @param graph_type       Arm: "tree", "sp" or "entangled".
+#' @param load_level       Load regime.
+#' @param N                Agent population; the arm's own by default.
+#' @param seed             Random seed.
+#' @param n_rounds         Number of rounds.
+#' @param leaf_mix         "uniform" or "skewed".
+#' @param deadlines        Integer vector of possible deadlines (ms).
+#' @param lambda_l_default Per-ms value-decay rate.
+#' @return One row per round.
+node_existence_run <- function(graph_type = c("tree", "sp", "entangled"),
+                               load_level = "high", N = NULL, seed = 1L,
+                               n_rounds = 20L, leaf_mix = "uniform",
+                               deadlines = c(500L, 750L, 1000L),
+                               lambda_l_default = node_lambda_l()) {
+  graph_type <- match.arg(graph_type)
+  N   <- N %||% node_agents()[[graph_type]]
+  set.seed(seed)
+  env     <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
+  agents  <- init_agents(N)
+  base    <- base_latency_per_leaf(env)
+  reserve <- env$reserve_price %||% 0
+
+  rows <- vector("list", n_rounds)
+  for (t in seq_len(n_rounds)) {
+    tasks  <- node_round_tasks(env, agents, t, seed, deadlines)
+    v_true <- node_true_value(tasks, base, lambda_l_default)
+    rows[[t]] <- bind_cols(
+      tibble(graph_type = graph_type, load_level = load_level,
+             leaf_mix = leaf_mix, N = as.integer(N), seed = as.integer(seed),
+             reserve = reserve, round = t),
+      node_existence_certificate(tasks, env, v_true, reserve))
+  }
+  bind_rows(rows)
+}
+
+#' The grid the existence block branches over.
+#'
+#' @param n_seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_existence_grid <- function(n_seeds) {
+  tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     leaf_mix   = c("uniform", "skewed"),
+                     seed       = seq_len(n_seeds))
+}
+
+#' The share of rounds a clearing price exists for, per instance and mix.
+#'
+#' The relative gap is reported beside the absolute one because a gap of a
+#' fixed size means different things at different round values; a round whose
+#' packing is worth nothing has no relative gap and contributes zero.
+#'
+#' @param rows Per-round rows from node_existence_run().
+#' @return One row per instance and mix.
+node_existence_summary <- function(rows) {
+  rows %>%
+    group_by(graph_type, leaf_mix) %>%
+    summarise(n_rounds          = dplyr::n(),
+              fraction_integral = mean(integral),
+              mean_gap          = mean(gap),
+              max_gap           = max(gap),
+              mean_relative_gap = mean(ifelse(ip_value > 0,
+                                              gap / ip_value, 0)),
+              .groups = "drop")
+}
