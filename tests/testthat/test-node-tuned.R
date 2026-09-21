@@ -170,8 +170,10 @@ test_that("the evaluation grid's architecture values are driver levels, passed t
 # of every cell whether its knob still sits on an edge.
 
 test_that("the widened grids extend the old ones rather than replace them", {
-  # Appended, never inserted: the rows already run keep their order, and a tie
-  # between an old value and a new one still resolves to the old one.
+  # Appended, never inserted, so the rows already run keep their order. What
+  # a tie resolves to is decided elsewhere: the knobs are summarised before
+  # the maximum is taken, which orders them by value, so slice_max takes the
+  # smallest knob on the grid rather than the one run first.
   expect_equal(node_reserve_markups()[1:4], c(1, 1.25, 1.5, 2))
   expect_true(all(c(3, 4) %in% node_reserve_markups()))
   expect_equal(node_tuning_posted_levels()[seq_along(node_posted_levels())],

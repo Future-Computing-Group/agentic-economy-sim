@@ -1797,8 +1797,13 @@ node_frontier_table <- function(raw_df,
 #' Below one is a real setting rather than a no-op: the effective floor is
 #' max(price_floor, reserve * markup) and the node callers leave `price_floor`
 #' at its zero default, so the market clears against a genuinely lower floor.
-#' Appended, never inserted, so the rows already run keep their order and a tie
-#' between an old value and a new one still resolves to the old one.
+#' Appended, never inserted, so the rows already run keep their order. It does
+#' not make a tie resolve to the value already run: `node_eval_grid()` averages
+#' the tuning frame over its seeds before taking the maximum, and that summary
+#' comes back ordered by the knob, so `slice_max(with_ties = FALSE)` returns
+#' the first row of THAT order -- the smallest knob on the grid, old or new. A
+#' cell whose tuning welfare is flat is therefore reported at 0.5 rather than
+#' at 1, and `knob_flat` in the tuned table is what says the choice was a tie.
 #'
 #' @return Numeric vector of multipliers on the per-node reserve.
 node_reserve_markups <- function() c(1, 1.25, 1.5, 2, 3, 4, 0.5, 0.75)
@@ -1868,6 +1873,8 @@ node_eval_grid <- function(tuning_raw, seeds,
                              "reserve_markup")))) %>%
     summarise(tuning_welfare = mean(welfare, na.rm = TRUE), .groups = "drop") %>%
     group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
+    # The summary above comes back ordered by the knob, so on a tie this takes
+    # the smallest knob the cell ran rather than the one run first.
     slice_max(tuning_welfare, n = 1, with_ties = FALSE) %>%
     ungroup() %>%
     select(-tuning_welfare)
