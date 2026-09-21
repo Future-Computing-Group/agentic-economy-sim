@@ -157,15 +157,19 @@ test_that("the ascending arm runs beside the market in every block that prices",
   expect_equal(sum(mech$mechanism == "market_asc"),
                sum(mech$mechanism == "market"))
 
+  # The ascending arm runs at the uniform mix only; the skewed rows of the
+  # battery belong to the bidirectional market alone.
   for (g in list(node_convergence_grid(10L), node_determinacy_grid(10L),
                  node_shock_grid(10L))) {
     expect_setequal(g$mechanism, c("market", "market_asc"))
-    expect_equal(sum(g$mechanism == "market_asc"),
-                 sum(g$mechanism == "market"))
+    uni <- g[g$leaf_mix == "uniform", ]
+    expect_equal(sum(uni$mechanism == "market_asc"),
+                 sum(uni$mechanism == "market"))
+    expect_true(all(g$leaf_mix[g$mechanism == "market_asc"] == "uniform"))
   }
-  expect_equal(nrow(node_convergence_grid(10L)), 240L)
-  expect_equal(nrow(node_determinacy_grid(10L)), 60L)
-  expect_equal(nrow(node_shock_grid(10L)), 240L)
+  expect_equal(nrow(node_convergence_grid(10L)), 360L)
+  expect_equal(nrow(node_determinacy_grid(10L)), 90L)
+  expect_equal(nrow(node_shock_grid(10L)), 360L)
 })
 
 test_that("the battery's drivers take the level they run", {
