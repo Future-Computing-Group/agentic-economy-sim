@@ -2,8 +2,8 @@
 # ---------------------------------------------------------------------------
 # Targets pipeline for the simulation study.
 #
-# Paper: "Real-Time AI Service Economy: A Framework for Agentic Computing
-#         Across the Continuum" -- IEEE Transactions on Services Computing.
+# Paper: "Agentic Service Markets Across the Computing Continuum:
+#         A Polymatroidal Architecture" -- IEEE Transactions on Services Computing.
 #
 # Usage:
 #   targets::tar_make()           # run the full pipeline
