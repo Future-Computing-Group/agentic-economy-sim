@@ -915,6 +915,7 @@ list(
     node_exp6_convergence,
     node_convergence_run(
       graph_type       = node_exp6_convergence_grid$graph_type,
+      mechanism        = node_exp6_convergence_grid$mechanism,
       load_level       = "high",
       N                = node_agent_counts[[node_exp6_convergence_grid$graph_type]],
       seed             = node_exp6_convergence_grid$seed,
@@ -936,6 +937,7 @@ list(
     node_exp6_determinacy,
     node_determinacy_run(
       graph_type       = node_exp6_determinacy_grid$graph_type,
+      mechanism        = node_exp6_determinacy_grid$mechanism,
       load_level       = "high",
       N                = node_agent_counts[[node_exp6_determinacy_grid$graph_type]],
       seed             = node_exp6_determinacy_grid$seed,
@@ -975,6 +977,7 @@ list(
     node_exp6_shock,
     node_shock_run(
       graph_type       = node_exp6_shock_grid$graph_type,
+      mechanism        = node_exp6_shock_grid$mechanism,
       architecture     = node_exp6_shock_grid$architecture,
       shock            = node_exp6_shock_grid$shock,
       load_level       = "high",

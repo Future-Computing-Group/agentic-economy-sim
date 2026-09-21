@@ -93,7 +93,7 @@ test_that("the contracted arm runs the shock through its own advertised region",
 
 test_that("re-settling is the first round that stays settled for five", {
   base <- tibble(graph_type = "tree", architecture = "naive", shock = "capacity",
-                 seed = 1L, shock_start = 5L, round = 1:20,
+                 mechanism = "market", seed = 1L, shock_start = 5L, round = 1:20,
                  in_shock = round >= 5 & round < 10,
                  admitted = 50, admitted_control = 50, n_offered = 100,
                  n_offered_control = 100, unit_cost = 1, welfare = 10,
@@ -114,7 +114,7 @@ test_that("re-settling is the first round that stays settled for five", {
 
 test_that("the overshoot is the peak price after the shock over what it settles at", {
   rows <- tibble(graph_type = "tree", architecture = "naive", shock = "capacity",
-                 seed = 1L, shock_start = 5L, round = 1:20,
+                 mechanism = "market", seed = 1L, shock_start = 5L, round = 1:20,
                  in_shock = round >= 5 & round < 10,
                  admitted = 50, admitted_control = 50, n_offered = 100,
                  n_offered_control = 100, welfare = 10, welfare_control = 10,
@@ -129,7 +129,9 @@ test_that("the sweep crosses the instances, the arms and the two shocks", {
   expect_setequal(g$graph_type, c("tree", "sp", "entangled"))
   expect_setequal(g$architecture, c("naive", "hybrid_noema"))
   expect_setequal(g$shock, c("capacity", "burst"))
-  expect_equal(nrow(g), 3L * 2L * 2L * 10L)
+  # Three instances, two arms, two shocks, two price processes, ten seeds.
+  expect_setequal(g$mechanism, c("market", "market_asc"))
+  expect_equal(nrow(g), 3L * 2L * 2L * 2L * 10L)
 })
 
 test_that("the pipeline carries the shock block as its own targets", {

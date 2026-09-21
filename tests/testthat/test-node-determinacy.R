@@ -104,7 +104,8 @@ test_that("the round's demand stream is the pipeline's own", {
 test_that("the sweep runs three instances over the pipeline's seeds", {
   g <- node_determinacy_grid(n_seeds = 10L)
   expect_setequal(g$graph_type, c("tree", "sp", "entangled"))
-  expect_equal(nrow(g), 3L * 10L)
+  # Three instances, two price processes, ten seeds.
+  expect_equal(nrow(g), 3L * 2L * 10L)
 })
 
 test_that("the pipeline carries the determinacy block as its own targets", {

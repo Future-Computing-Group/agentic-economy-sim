@@ -775,6 +775,28 @@ node_posted_slice_nodes <- function(env_adv, env_true) {
   setdiff(tier_capacities(env_adv)$tier, tier_capacities(env_true)$tier)
 }
 
+#' The price process a market level runs, and the vector it starts from.
+#'
+#' The ascending level is a fresh auction each round from the floor: a
+#' monotone rule entered at the price the previous round ended on would
+#' ratchet to the level that cleared the heaviest round ever seen and stay
+#' there, which measures the ratchet rather than the mechanism. Every other
+#' level keeps the state it was handed.
+#'
+#' @param mechanism      The arm's level.
+#' @param state          The market state the round was handed.
+#' @param env            The region the round clears over.
+#' @param reserve_markup Multiplier on the per-node reserve.
+#' @return A list of the `state` to clear from and the `rule` to clear under.
+node_price_process <- function(mechanism, state, env, reserve_markup = 1) {
+  if (!identical(mechanism, "market_asc")) {
+    return(list(state = state, rule = "bidirectional"))
+  }
+  state$prices <- init_tier_prices(env, (env$reserve_price %||% 0) *
+                                     reserve_markup)
+  list(state = state, rule = "ascending")
+}
+
 #' The round's per-leaf marginal values, descending.
 #'
 #' @param tasks  The round's tasks, carrying a `recipe` column.
@@ -944,7 +966,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             mechanism = c("market", "random", "edf",
                                           "greedy_ev", "posted_price", "k8s",
                                           "market_cc", "posted_price_matched",
-                                          "market_posted_slice"),
+                                          "market_posted_slice", "market_asc"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
@@ -1080,14 +1102,17 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
           e, prev_util, coefficient = queue_coef)[as.character(tasks$recipe)])
         a <- 0
       }
+      pp <- node_price_process(mechanism, state, e, reserve_markup)
       clear_multitier_market(
-        tasks, e, b$util_hat, b$base_latency, state,
+        tasks, e, b$util_hat, b$base_latency, pp$state,
         alpha = a, p = p, lambda_l_default = lambda_l_default,
         salvage = salvage, iters = iters, eta = eta, beta = beta,
-        reserve_markup = reserve_markup, posted_prices = slice_price)
+        reserve_markup = reserve_markup, posted_prices = slice_price,
+        price_rule = pp$rule)
     }
 
-    if (!mechanism %in% c("market", "market_cc", "market_posted_slice")) {
+    if (!mechanism %in% c("market", "market_cc", "market_posted_slice",
+                          "market_asc")) {
       # The five arms that do not discover a price. Each produces a score and
       # the shared packing kernel admits by it under the node capacities, so
       # what separates them is the ranking key and, for the posted price, the
@@ -1629,7 +1654,7 @@ node_exp6_mechanism_grid <- function(n_seeds) {
   arms <- bind_rows(
     tidyr::expand_grid(
       mechanism = c("random", "edf", "greedy_ev", "market", "market_cc",
-                    "k8s"),
+                    "market_asc", "k8s"),
       p_post_k  = 1),
     tidyr::expand_grid(mechanism = "posted_price",
                        p_post_k  = node_posted_levels()),
@@ -2022,6 +2047,7 @@ node_round_demand <- function(tasks, env, surplus) {
 #'                         equilibrium check, for the theory pass.
 #' @return One row per round.
 node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
+                                 mechanism = c("market", "market_asc"),
                                  load_level = "high", N = NULL, seed = 1L,
                                  n_rounds = 20L, iters = 15L,
                                  deadlines = c(500L, 750L, 1000L),
@@ -2031,6 +2057,7 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
                                  eta = price_eta, success_lr = 0.3,
                                  save_profile = FALSE) {
   graph_type <- match.arg(graph_type)
+  mechanism  <- match.arg(mechanism)
   N   <- N %||% node_agents()[[graph_type]]
   set.seed(seed)
   env <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
@@ -2045,10 +2072,11 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
   for (t in seq_len(n_rounds)) {
     tasks   <- node_round_tasks(env, agents, t, seed, deadlines)
     bid     <- node_bid_inputs(env, tasks, prev_util)
+    pp      <- node_price_process(mechanism, ms, env)
     cleared <- clear_multitier_market(
-      tasks, env, bid$util_hat, bid$base_latency, ms,
+      tasks, env, bid$util_hat, bid$base_latency, pp$state,
       alpha = alpha, p = p, lambda_l_default = lambda_l_default,
-      salvage = salvage, iters = iters, eta = eta)
+      salvage = salvage, iters = iters, eta = eta, price_rule = pp$rule)
     ms <- append_price_history(cleared$market_state, cleared$market_state$prices)
 
     demand <- node_round_demand(tasks, env, cleared$surplus)[names(capv)]
@@ -2064,7 +2092,8 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
       lr = success_lr)
 
     rows[[t]] <- tibble(
-      graph_type = graph_type, load_level = load_level, N = as.integer(N),
+      graph_type = graph_type, mechanism = mechanism,
+      load_level = load_level, N = as.integer(N),
       seed = as.integer(seed), iters = as.integer(iters), round = t,
       n_offered = nrow(tasks), admitted = nrow(cleared$allocation),
       resid_excess = cleared$clearing$resid_excess,
@@ -2085,6 +2114,7 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
 node_convergence_grid <- function(n_seeds) {
   budgets <- c(15L, 50L, 200L, 1000L)
   tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     mechanism = c("market", "market_asc"),
                      seed = seq_len(n_seeds), iters = budgets) %>%
     # The profiles are kept where non-existence would show: the crossing
     # instance, at the budget beyond which nothing further will converge.
@@ -2097,7 +2127,7 @@ node_convergence_grid <- function(n_seeds) {
 #' @return One row per instance and budget.
 node_convergence_summary <- function(rows) {
   rows %>%
-    group_by(graph_type, iters) %>%
+    group_by(graph_type, mechanism, iters) %>%
     summarise(n_rounds           = dplyr::n(),
               converged_fraction = mean(equilibrium_ok),
               resid_excess       = mean(resid_excess, na.rm = TRUE),
@@ -2182,6 +2212,7 @@ node_price_starts <- function(env, carried, seed = 1L, floors = 20) {
 #' @param success_lr       Learning rate for the success model.
 #' @return One row per round.
 node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
+                                 mechanism = c("market", "market_asc"),
                                  load_level = "high", N = NULL, seed = 1L,
                                  n_rounds = 20L, iters = 1000L,
                                  deadlines = c(500L, 750L, 1000L),
@@ -2190,6 +2221,7 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
                                  alpha = 50, p = 1.2, salvage = 0.0,
                                  eta = price_eta, success_lr = 0.3) {
   graph_type <- match.arg(graph_type)
+  mechanism  <- match.arg(mechanism)
   N   <- N %||% node_agents()[[graph_type]]
   set.seed(seed)
   env <- node_run_env(graph_type, load_level, N, leaf_mix, "off")
@@ -2197,6 +2229,10 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
   ms        <- init_market_state(env)
   prev_util <- NULL
   reserve   <- env$reserve_price %||% 0
+  # The start is the treatment here, so the ascending level takes its rule and
+  # not its floor: resetting every start to the floor would collapse the five
+  # starts into one and measure nothing.
+  rule <- node_price_process(mechanism, ms, env)$rule
 
   rows <- vector("list", n_rounds)
   for (t in seq_len(n_rounds)) {
@@ -2210,7 +2246,7 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
       cleared <- clear_multitier_market(
         tasks, env, bid$util_hat, bid$base_latency, state,
         alpha = alpha, p = p, lambda_l_default = lambda_l_default,
-        salvage = salvage, iters = iters, eta = eta)
+        salvage = salvage, iters = iters, eta = eta, price_rule = rule)
       welfare <- compute_welfare(
         execute_allocation(cleared$allocation, env, latency_noise_cv = 0), env,
         cleared$clearing$prices, lambda_l_default = lambda_l_default,
@@ -2223,7 +2259,8 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
     admitted <- vapply(from, function(x) length(x$admitted), numeric(1))
     welfare  <- vapply(from, function(x) x$welfare, numeric(1))
     rows[[t]] <- tibble(
-      graph_type = graph_type, load_level = load_level, N = as.integer(N),
+      graph_type = graph_type, mechanism = mechanism,
+      load_level = load_level, N = as.integer(N),
       seed = as.integer(seed), iters = as.integer(iters), round = t,
       n_offered = nrow(tasks), n_starts = length(from),
       price_spread = node_price_spread(lapply(from, `[[`, "prices"), reserve),
@@ -2255,6 +2292,7 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
 #' @return A tibble with one row per branch.
 node_determinacy_grid <- function(n_seeds) {
   tidyr::expand_grid(graph_type = c("tree", "sp", "entangled"),
+                     mechanism = c("market", "market_asc"),
                      seed = seq_len(n_seeds))
 }
 
@@ -2264,7 +2302,7 @@ node_determinacy_grid <- function(n_seeds) {
 #' @return One row per instance.
 node_determinacy_summary <- function(rows) {
   rows %>%
-    group_by(graph_type) %>%
+    group_by(graph_type, mechanism) %>%
     summarise(n_rounds        = dplyr::n(),
               determinate     = mean(price_spread <= 1e-9),
               sets_agree      = mean(sets_agree),
@@ -2495,6 +2533,7 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
                            architecture = c("naive", "naive_ema",
                                             "hybrid_noema", "hybrid_ema"),
                            shock = c("capacity", "burst"),
+                           mechanism = c("market", "market_asc"),
                            load_level = "high", N = NULL, seed = 1L,
                            n_rounds = 200L, shock_start = 100L,
                            capacity_end = 150L, burst_end = 110L,
@@ -2507,6 +2546,7 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
   graph_type   <- match.arg(graph_type)
   architecture <- match.arg(architecture)
   shock        <- match.arg(shock)
+  mechanism    <- match.arg(mechanism)
   N    <- N %||% node_agents()[[graph_type]]
   arch <- node_architecture(architecture)
 
@@ -2537,10 +2577,12 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
 
       tasks <- node_round_tasks(eGen, agents, t, seed, deadlines)
       bid   <- node_bid_inputs(eA, tasks, prev_util)
+      pp    <- node_price_process(mechanism, ms, eA)
       cleared <- clear_multitier_market(
-        tasks, eA, bid$util_hat, bid$base_latency, ms,
+        tasks, eA, bid$util_hat, bid$base_latency, pp$state,
         alpha = alpha, p = p, lambda_l_default = lambda_l_default,
-        salvage = salvage, iters = iters, eta = eta, beta = arch$beta)
+        salvage = salvage, iters = iters, eta = eta, beta = arch$beta,
+        price_rule = pp$rule)
       ms <- append_price_history(cleared$market_state,
                                  cleared$market_state$prices)
 
@@ -2575,12 +2617,14 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
   control <- one_run(FALSE)
   shocked %>%
     mutate(graph_type = graph_type, architecture = architecture, shock = shock,
+           mechanism = mechanism,
            load_level = load_level, N = as.integer(N), seed = as.integer(seed),
            shock_start = as.integer(shock_start),
            admitted_control = control$admitted,
            n_offered_control = control$n_offered,
            welfare_control = control$welfare) %>%
-    select(graph_type, architecture, shock, load_level, N, seed, shock_start,
+    select(graph_type, architecture, shock, mechanism, load_level, N, seed,
+           shock_start,
            round, in_shock, n_offered, n_offered_control, admitted,
            admitted_control, unit_cost, resid_excess, equilibrium_ok, welfare,
            welfare_control)
@@ -2614,7 +2658,7 @@ node_rounds_to_resettle <- function(ok, from, hold = 5L) {
 #' @return One row per branch.
 node_shock_summary <- function(rows, hold = 5L, settled_tail = 25L) {
   rows %>%
-    group_by(graph_type, architecture, shock, seed) %>%
+    group_by(graph_type, architecture, shock, mechanism, seed) %>%
     summarise(
       n_rounds    = dplyr::n(),
       shock_start = dplyr::first(shock_start),
@@ -2643,6 +2687,7 @@ node_shock_grid <- function(n_seeds) {
   tidyr::expand_grid(graph_type   = c("tree", "sp", "entangled"),
                      architecture = c("naive", "hybrid_noema"),
                      shock        = c("capacity", "burst"),
+                     mechanism    = c("market", "market_asc"),
                      seed         = seq_len(n_seeds))
 }
 

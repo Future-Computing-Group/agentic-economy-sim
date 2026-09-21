@@ -53,9 +53,9 @@ test_that("the baseline half of the mechanism grid is the grid as it was", {
   base <- g[g$congestion == "baseline",
             c("mechanism", "p_post_k", "graph_type", "load_level",
               "architecture", "seed")]
-  expect_equal(nrow(base), 2280L)
-  expect_equal(nrow(g), 2L * 2280L)
-  expect_equal(sum(g$congestion == "calibrated"), 2280L)
+  expect_equal(nrow(base), 2400L)
+  expect_equal(nrow(g), 2L * 2400L)
+  expect_equal(sum(g$congestion == "calibrated"), 2400L)
   expect_equal(nrow(dplyr::distinct(base)), nrow(base))
 })
 

@@ -366,6 +366,15 @@ pack_tasks_greedy <- function(tasks_all, surplus_vec, env, max_tasks = Inf) {
 #' @param price_cap       Maximum price (default: 1000).
 #' @param beta            EMA weight on the entry prices when posting the
 #'                        cleared prices; 0, the default, posts them raw.
+#' @param price_rule      "bidirectional", the default, walks each price by a
+#'                        step proportional to that node's excess demand, up
+#'                        or down. "ascending" raises the price only on nodes
+#'                        whose demand exceeds capacity, by a fixed increment,
+#'                        never lowers one, and stops at the first iteration
+#'                        with nothing over-demanded: the process the
+#'                        existence argument is stated for.
+#' @param ascent_step     The increment the ascending rule raises by; a tenth
+#'                        of the effective floor by default.
 #' @param posted_prices   Named numeric vector of node prices the operator
 #'                        posts rather than discovers. Those nodes are held at
 #'                        their posted level on every tatonnement iteration
@@ -384,7 +393,10 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
                                    iters = 15L, eta = price_eta,
                                    price_floor = 0.0, price_cap = 1000.0,
                                    beta = 0, reserve_markup = 1,
-                                   posted_prices = NULL) {
+                                   posted_prices = NULL,
+                                   price_rule = c("bidirectional", "ascending"),
+                                   ascent_step = NULL) {
+  price_rule <- match.arg(price_rule)
   if (is.null(market_state$prices)) {
     market_state$prices <- init_tier_prices(env)
   }
@@ -421,6 +433,7 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
   # Per-tier reserve / marginal-cost price anchor (env$reserve_price, default 0
   # for legacy envs). The effective floor is max(price_floor, reserve).
   reserve <- (env$reserve_price %||% 0) * reserve_markup
+  rise    <- ascent_step %||% (0.1 * reserve)
 
   # Compute expected value for all tasks
   ev <- task_expected_value(
@@ -449,6 +462,18 @@ clear_multitier_market <- function(tasks_all, env, util_hat, base_latency,
         step         = eta * (excess / pmax(capacity, 1))
       )
 
+    if (price_rule == "ascending") {
+      # Monotone: the round is over once no node is over-demanded, and until
+      # then only the over-demanded ones move, by one increment.
+      if (all(x$excess <= 0)) break
+      prices <- hold(x %>%
+        transmute(
+          tier  = tier,
+          price = pmin(price_cap, pmax(max(price_floor, reserve),
+                                       price + ifelse(excess > 0, rise, 0)))
+        ))
+      next
+    }
     prices <- hold(x %>%
       transmute(
         tier  = tier,

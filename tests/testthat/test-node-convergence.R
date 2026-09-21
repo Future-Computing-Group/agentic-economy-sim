@@ -106,7 +106,8 @@ test_that("the sweep runs three instances over four budgets", {
   g <- node_convergence_grid(n_seeds = 10L)
   expect_setequal(g$iters, c(15L, 50L, 200L, 1000L))
   expect_setequal(g$graph_type, c("tree", "sp", "entangled"))
-  expect_equal(nrow(g), 3L * 10L * 4L)
+  # Three instances, two price processes, ten seeds, four budgets.
+  expect_equal(nrow(g), 3L * 2L * 10L * 4L)
   # The profiles are kept where non-existence would appear: the crossing
   # instance, at the budget beyond which nothing more will converge.
   expect_true(all(g$save_profile ==
@@ -116,7 +117,8 @@ test_that("the sweep runs three instances over four budgets", {
 test_that("the summary reports the converged fraction per instance and budget", {
   rows <- tidyr::expand_grid(graph_type = c("tree", "entangled"),
                              iters = c(15L, 200L), round = 1:4) %>%
-    dplyr::mutate(seed = 1L, resid_excess = ifelse(iters == 15L, 0.1, 0),
+    dplyr::mutate(seed = 1L, mechanism = "market",
+                  resid_excess = ifelse(iters == 15L, 0.1, 0),
                   admitted = 50,
                   equilibrium_ok = iters == 200L | round > 3)
   s <- node_convergence_summary(rows)
