@@ -208,3 +208,49 @@ test_that("the deployed pipeline templates translate to a laminar family", {
                     leaf_mix = "uniform", seeds = 1L, n_rounds = 2L)
   expect_true(all(rows$integral))
 })
+
+
+# ---- the grid and the two summaries ----------------------------------------
+
+test_that("the grid is one branch per instance and mix, seeds looped inside", {
+  inst <- sweep_instances(n_per_stratum = 2L, seed = 1L, max_draws = 800L)
+  grid <- sweep_grid(inst)
+  expect_equal(nrow(grid), 2L * nrow(inst))
+  expect_setequal(unique(grid$leaf_mix), c("uniform", "skewed"))
+  expect_true("family" %in% names(grid))
+  expect_true(inherits(grid$family[[1]], "list"))
+  # The branch count is what keeps the block off a per-seed grid: ten seeds a
+  # branch would put it in the thousands.
+  expect_lt(nrow(grid), 1000L)
+})
+
+test_that("the summaries report the strata, the named rows and the predicates", {
+  fs <- sweep_substrate_families("small")
+  inst <- tibble(instance = c("substrate_T", "triangle"),
+                 n_leaves = c(3L, 3L), n_internal = c(3L, 3L),
+                 crossing_count = c(0L, 3L),
+                 crossing_graph_bipartite = c(TRUE, FALSE),
+                 interval_order = c(TRUE, FALSE),
+                 tu_verdict = c(TRUE, FALSE),
+                 stratum = c("laminar", "oddcycle_nonInterval"))
+  rows <- bind_rows(
+    sweep_run(fs$T, "substrate_T", "laminar", "uniform", seeds = 1L, n_rounds = 3L),
+    sweep_run(sweep_triangle_family(), "triangle", "oddcycle_nonInterval",
+              "uniform", seeds = 1L, n_rounds = 3L))
+
+  s <- sweep_summary(rows)
+  expect_setequal(s$label, c("laminar", "oddcycle_nonInterval",
+                             "substrate_T", "triangle"))
+  expect_true(all(c("n_instances", "n_rounds", "fraction_positive_gap",
+                    "mean_relative_gap", "max_relative_gap", "mean_exactness",
+                    "worst_exactness", "onset_error") %in% names(s)))
+  expect_equal(s$fraction_positive_gap[s$label == "laminar"], 0)
+  expect_gt(s$fraction_positive_gap[s$label == "triangle"], 0)
+
+  b <- sweep_by_instance(rows, inst)
+  expect_equal(nrow(b), 2L)
+  expect_true(all(c("crossing_count", "tu_verdict", "mean_exactness",
+                    "worst_exactness", "onset_error") %in% names(b)))
+  expect_equal(b$crossing_count[b$instance == "triangle"], 3L)
+  expect_equal(b$mean_exactness[b$instance == "substrate_T"], 1)
+})

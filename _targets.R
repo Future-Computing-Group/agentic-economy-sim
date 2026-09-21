@@ -1023,6 +1023,38 @@ list(
   tar_target(node_exp6_existence_summary,
              node_existence_summary(bind_rows(node_exp6_existence))),
 
+  # -- where existence and exactness actually fail --------------------------
+  # Every shipped instance is laminar or laminar plus one set, so its packing
+  # relaxation is integral at every value vector and the topology question is
+  # settled there by a theorem. This block leaves that region: generated
+  # leaf-block families stratified by their crossing structure, plus the
+  # three-leaf triangle, the shipped T / X / S and the deployed pipeline
+  # templates as named rows. Off the market, on a task-by-node matrix, like
+  # the existence block. Seeds loop inside a branch so the branch count is
+  # instances times mixes rather than times seeds as well.
+  tar_target(node_exp6_sweep_instances, sweep_instances(n_per_stratum = 20L)),
+  tar_target(node_exp6_sweep_grid, sweep_grid(node_exp6_sweep_instances)),
+  tar_target(
+    node_exp6_sweep,
+    sweep_run(
+      family    = node_exp6_sweep_grid$family[[1]],
+      instance  = node_exp6_sweep_grid$instance,
+      stratum   = node_exp6_sweep_grid$stratum,
+      leaf_mix  = node_exp6_sweep_grid$leaf_mix,
+      seeds     = seq_len(n_seeds),
+      n_rounds  = 20L,
+      deadlines = task_deadlines,
+      lambda_l  = node_lambda
+    ),
+    pattern   = map(node_exp6_sweep_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp6_sweep_summary,
+             sweep_summary(bind_rows(node_exp6_sweep))),
+  tar_target(node_exp6_sweep_by_instance,
+             sweep_by_instance(bind_rows(node_exp6_sweep),
+                               node_exp6_sweep_instances)),
+
   tar_target(node_exp6_sensitivity_grid, node_sensitivity_grid()),
   tar_target(
     node_exp6_sensitivity,
