@@ -972,7 +972,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             mechanism = c("market", "random", "edf",
                                           "greedy_ev", "posted_price", "k8s",
                                           "market_cc", "posted_price_matched",
-                                          "market_posted_slice", "market_asc"),
+                                          "market_posted_slice", "market_asc",
+                                          "posted_price_fcfs"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
@@ -1142,7 +1143,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
           alpha = alpha, p = p,
           lambda_l_default = lambda_l_default, salvage = salvage))
 
-      if (mechanism %in% c("posted_price", "posted_price_matched")) {
+      if (mechanism %in% c("posted_price", "posted_price_matched",
+                           "posted_price_fcfs")) {
         p_task <- if (mechanism == "posted_price_matched") {
           # One dose for every instance, so the cross-instance ordering is
           # read at equal dose rather than at each instance's own path cost.
@@ -1152,7 +1154,12 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                               k = p_post_k)[
                                                 as.character(tasks_all$recipe)])
         }
-        allocation   <- posted_price_allocate(tasks_all, env, scores, p_task)
+        # The arrival-order level is the same mechanism under the service
+        # discipline a posted price has in deployment: the operator does not
+        # rank the participants it has already priced.
+        allocation   <- posted_price_allocate(
+          tasks_all, env, scores, p_task,
+          order = if (mechanism == "posted_price_fcfs") "arrival" else "value")
         # The price is what agents face whether or not they take it, so it is
         # recorded every round, as the market arm records what it cleared at.
         unitCostV[t] <- if (n_gen == 0L) NA_real_ else mean(p_task)
@@ -1969,7 +1976,15 @@ node_tuning_grid <- function(seeds) {
                        p_post_k = node_tuning_posted_levels(),
                        reserve_markup = 1),
     tidyr::expand_grid(mechanism = c("market", "market_cc"), p_post_k = 1,
-                       reserve_markup = node_reserve_markups()))
+                       reserve_markup = node_reserve_markups()),
+    # The arrival-order arm tunes over the same levels as the value-ranked
+    # one, so the comparison is between two disciplines at each one's own best
+    # setting rather than between a tuned arm and an untuned one. Appended
+    # last, so every row the block already ran keeps its index and the
+    # branches already computed stay cached.
+    tidyr::expand_grid(mechanism = "posted_price_fcfs",
+                       p_post_k = node_tuning_posted_levels(),
+                       reserve_markup = 1))
   tidyr::expand_grid(
     arms,
     graph_type   = c("tree", "sp", "entangled"),
@@ -2058,11 +2073,21 @@ node_eval_architecture <- function(x) {
 node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
   edge <- function(v, g) !is.na(v) & (v <= min(g) | v >= max(g))
   dplyr::case_when(
-    mechanism == "posted_price" ~ edge(p_post_k, node_tuning_posted_levels()),
+    mechanism %in% .posted_knob_arms() ~ edge(p_post_k,
+                                              node_tuning_posted_levels()),
     mechanism %in% c("market", "market_cc") ~ edge(reserve_markup,
                                                    node_reserve_markups()),
     TRUE ~ FALSE)
 }
+
+#' The arms whose knob is the posted level rather than the reserve markup.
+#'
+#' Named once: the two service disciplines are one mechanism under one dial,
+#' so a helper that reads the dial off the arm's name has to know both, and a
+#' list repeated at three sites is a list that drifts at one of them.
+#'
+#' @return Character vector of mechanism levels.
+.posted_knob_arms <- function() c("posted_price", "posted_price_fcfs")
 
 #' The level a mechanism's own knob was run at.
 #'
@@ -2071,7 +2096,7 @@ node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
 #' @param reserve_markup Its reserve markup.
 #' @return Numeric vector.
 .knob_level <- function(mechanism, p_post_k, reserve_markup) {
-  ifelse(mechanism == "posted_price", p_post_k, reserve_markup)
+  ifelse(mechanism %in% .posted_knob_arms(), p_post_k, reserve_markup)
 }
 
 #' Does a Student t interval for a paired difference cover zero.
@@ -2157,7 +2182,7 @@ node_knob_flat <- function(tuned, tuning_raw, cell_vars) {
     .paired_t_covers_zero(at$.welfare - nb$.welfare[match(at$seed, nb$seed)])
   }, logical(1))
   # An arm with nothing to tune has no neighbour to be flat against.
-  ifelse(tuned$mechanism %in% c("posted_price", "market", "market_cc"),
+  ifelse(tuned$mechanism %in% c(.posted_knob_arms(), "market", "market_cc"),
          out, FALSE)
 }
 

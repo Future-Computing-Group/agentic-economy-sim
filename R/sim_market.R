@@ -1015,8 +1015,15 @@ posted_price_anchor_per_leaf <- function(env, anc, k = 1,
 #' @param ev        Per-task expected value (from task_expected_value).
 #' @param p_post    The posted price: one scalar per task bundle, or one price
 #'                  per task when the operator posts a level per leaf.
+#' @param order     The discipline the participants are served in: "value"
+#'                  ranks them by expected value, "arrival" serves them in the
+#'                  order they arrived, which is what a posted price in
+#'                  deployment does. The screen and the payment are the same
+#'                  either way, so the two differ only where capacity binds.
 #' @return The admitted tasks, with a `payment` column.
-posted_price_allocate <- function(tasks_all, env, ev, p_post) {
+posted_price_allocate <- function(tasks_all, env, ev, p_post,
+                                  order = c("value", "arrival")) {
+  order <- match.arg(order)
   # The screen is elementwise, but the packer rations the tasks that clear it,
   # so it returns strictly fewer rows than the screen keeps. The payment is
   # therefore indexed by the rows the PACKER chose, not by the screen: writing
@@ -1025,7 +1032,12 @@ posted_price_allocate <- function(tasks_all, env, ev, p_post) {
   p_task <- rep_len(p_post, nrow(tasks_all))
   keep   <- is.finite(ev) & ev > p_task
   kept   <- tasks_all[keep, ]
-  pack_tasks_greedy(kept, ev[keep], env) %>%
+  # The packing kernel is the same one and enforces the same capacities; what
+  # the discipline changes is the key it walks them in. A descending key on the
+  # arrival index is the row order, and it is strictly positive so the kernel's
+  # non-positive-rank skip never drops a participant the screen kept.
+  rank <- if (order == "value") ev[keep] else rev(seq_len(nrow(kept)))
+  pack_tasks_greedy(kept, rank, env) %>%
     mutate(payment = p_task[keep][match(task_id, kept$task_id)])
 }
 

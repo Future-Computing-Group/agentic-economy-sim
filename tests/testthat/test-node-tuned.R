@@ -65,17 +65,21 @@ test_that("the driver carries the markup it ran at", {
 
 test_that("the tuning grid gives each mechanism one knob and no other freedom", {
   g <- node_tuning_grid(c(1L, 2L))
-  expect_setequal(unique(g$mechanism), c("posted_price", "market", "market_cc"))
-  expect_setequal(unique(g$p_post_k[g$mechanism == "posted_price"]),
-                  node_tuning_posted_levels())
-  expect_setequal(unique(g$p_post_k[g$mechanism != "posted_price"]), 1)
+  expect_setequal(unique(g$mechanism),
+                  c("posted_price", "posted_price_fcfs", "market", "market_cc"))
+  for (m in c("posted_price", "posted_price_fcfs")) {
+    expect_setequal(unique(g$p_post_k[g$mechanism == m]),
+                    node_tuning_posted_levels())
+    expect_setequal(unique(g$reserve_markup[g$mechanism == m]), 1)
+  }
+  expect_setequal(unique(g$p_post_k[!grepl("^posted_price", g$mechanism)]), 1)
   expect_setequal(unique(g$reserve_markup[g$mechanism == "market"]),
                   node_reserve_markups())
-  expect_setequal(unique(g$reserve_markup[g$mechanism == "posted_price"]), 1)
   # Twelve cells: three instances, two loads, two architectures; each at both
-  # congestion levels.
+  # congestion levels. Two posted disciplines over the posted levels, two
+  # market arms over the reserve markups.
   expect_equal(nrow(g),
-               (length(node_tuning_posted_levels()) +
+               (2 * length(node_tuning_posted_levels()) +
                   2 * length(node_reserve_markups())) * 12 * 2 * 2)
 })
 
