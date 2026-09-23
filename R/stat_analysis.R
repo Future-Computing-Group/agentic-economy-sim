@@ -859,7 +859,7 @@ stat_exp6 <- function(raw_df,
   raw_df <- raw_df %>%
     mutate(mechanism = ifelse(
       mechanism %in% c("posted_price", "posted_price_matched",
-                       "market_posted_slice"),
+                       "market_posted_slice", "posted_price_fcfs"),
       paste0(mechanism, "_k", p_post_k), mechanism))
   cell_name <- function(...) paste(stats::na.omit(c(...)), collapse = "_")
 

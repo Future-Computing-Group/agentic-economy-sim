@@ -1858,6 +1858,16 @@ node_exp6_mechanism_grid <- function(n_seeds) {
       graph_type   = c("tree", "sp", "entangled"),
       load_level   = c("medium", "high"),
       architecture = "hybrid",
+      seed         = seq_len(n_seeds)),
+    # The arrival-order posted price at every level the value-ranked one runs
+    # at, so the two service disciplines are compared level by level. Appended
+    # last, so every row the block already ran keeps its index.
+    tidyr::expand_grid(
+      mechanism    = "posted_price_fcfs",
+      p_post_k     = node_posted_levels(),
+      graph_type   = c("tree", "sp", "entangled"),
+      load_level   = c("medium", "high"),
+      architecture = c("naive", "hybrid"),
       seed         = seq_len(n_seeds)))
   # Every arm at both congestion levels: the comparison and the level it is
   # read at are one measurement, not a headline and a footnote.
@@ -2031,8 +2041,8 @@ node_tuning_grid <- function(seeds) {
     # The arrival-order arm tunes over the same levels as the value-ranked
     # one, so the comparison is between two disciplines at each one's own best
     # setting rather than between a tuned arm and an untuned one. Appended
-    # last, so every row the block already ran keeps its index and the
-    # branches already computed stay cached.
+    # last, so every row the block already ran keeps its index and its
+    # content, and the existing rows reproduce.
     tidyr::expand_grid(mechanism = "posted_price_fcfs",
                        p_post_k = node_tuning_posted_levels(),
                        reserve_markup = 1))

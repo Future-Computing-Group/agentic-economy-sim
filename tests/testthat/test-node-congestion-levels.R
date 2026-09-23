@@ -49,7 +49,9 @@ test_that("every grid of the mechanism block carries both levels", {
 test_that("the baseline half of the mechanism grid is the grid as it was", {
   # The rows the block already ran must still be there, at the driver's own
   # defaults, so the baseline numbers reproduce.
+  # The arrival-order arm is appended after them and counted in its own test.
   g <- node_exp6_mechanism_grid(n_seeds = 10L)
+  g <- g[g$mechanism != "posted_price_fcfs", ]
   base <- g[g$congestion == "baseline",
             c("mechanism", "p_post_k", "graph_type", "load_level",
               "architecture", "seed")]

@@ -108,8 +108,8 @@ test_that("the tuning grid carries the new arm at the posted levels, appended", 
   expect_setequal(unique(g$p_post_k[g$mechanism == "posted_price_fcfs"]),
                   node_tuning_posted_levels())
   expect_setequal(unique(g$reserve_markup[g$mechanism == "posted_price_fcfs"]), 1)
-  # Appended, never inserted: every row the block already ran keeps its index,
-  # so the branches already computed stay cached.
+  # Appended, never inserted: every row the block already ran keeps its index
+  # and its content.
   old <- (length(node_tuning_posted_levels()) +
             2 * length(node_reserve_markups())) * 12 * 2 * 2
   expect_false("posted_price_fcfs" %in% g$mechanism[seq_len(old)])
@@ -158,4 +158,35 @@ test_that("a knob on the edge of the posted grid is flagged for the new arm too"
   expect_equal(node_knob_at_boundary(edge$mechanism, edge$p_post_k,
                                      edge$reserve_markup),
                c(TRUE, TRUE, FALSE))
+})
+
+test_that("the mechanism grid runs the new arm at every posted level, appended", {
+  g <- node_exp6_mechanism_grid(n_seeds = 10L)
+  expect_setequal(unique(g$p_post_k[g$mechanism == "posted_price_fcfs"]),
+                  node_posted_levels())
+  # Nine levels, three instances, two loads, two architectures, ten seeds,
+  # two congestion levels.
+  expect_equal(sum(g$mechanism == "posted_price_fcfs"),
+               9L * 3L * 2L * 2L * 10L * 2L)
+  # Appended after every row the block already ran.
+  old <- nrow(g) - sum(g$mechanism == "posted_price_fcfs")
+  expect_equal(old, 4800L)
+  expect_false("posted_price_fcfs" %in% g$mechanism[seq_len(old)])
+})
+
+test_that("the mechanism statistics keep each arrival-order level its own arm", {
+  # Pooling nine posted levels under one label would test a mixture of nine
+  # prices against the other arms and report it as one.
+  raw <- tidyr::expand_grid(
+    mechanism = "posted_price_fcfs", p_post_k = c(1, 2), graph_type = "tree",
+    load_level = "high", architecture = "naive", seed = 1:4) %>%
+    dplyr::bind_rows(tidyr::expand_grid(
+      mechanism = "greedy_ev", p_post_k = 1, graph_type = "tree",
+      load_level = "high", architecture = "naive", seed = 1:4)) %>%
+    dplyr::mutate(median_latency = seed + p_post_k, drop_rate = seed / 10,
+                  welfare = seed * p_post_k, mean_price_volatility = 0,
+                  efficiency = 0.5)
+  s <- stat_exp6(raw)
+  groups <- unique(s$per_topo_load[[1]]$ci$mechanism)
+  expect_true(all(c("posted_price_fcfs_k1", "posted_price_fcfs_k2") %in% groups))
 })
