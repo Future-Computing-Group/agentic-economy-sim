@@ -183,7 +183,10 @@ test_that("every instance of the sweep gets a total-unimodularity verdict", {
   # draw, so no instance of the sweep is reported as unknown.
   inst <- sweep_instances(20L)
   expect_false(any(is.na(inst$tu_verdict)))
-  expect_equal(nrow(inst), 100L)
+  # Five strata at the quota plus the hand-built families that take a place in
+  # one, and the series-parallel instance appended outside the quota.
+  expect_equal(nrow(inst), 101L)
+  expect_equal(sum(inst$instance != "substrate_SP"), 100L)
   # Laminar and one-crossing families are unions of at most two laminar
   # families, whose incidence matrices are totally unimodular; the enumeration
   # is checked against that rather than trusted on its own.
@@ -372,4 +375,89 @@ test_that("the summaries report the strata, the named rows and the predicates", 
   expect_equal(b$mean_admitted[b$instance == "triangle"], 1)
   expect_equal(b$displaced_over_admitted[b$instance == "triangle"], 0)
   expect_gt(b$mean_admitted[b$instance == "gen_002"], 1)
+})
+
+
+# ---- the two-terminal series-parallel recogniser ---------------------------
+
+test_that("the recogniser reduces a two-terminal chain to a single edge", {
+  # One service node between the virtual source and the virtual terminal: the
+  # series reductions alone take it to the source-terminal edge.
+  expect_true(sweep_series_parallel(tibble(from = "d", to = "l1")))
+})
+
+test_that("the recogniser separates the shipped instances by their shape", {
+  specs <- leaf_instance_specs("scale")
+  # A rooted tree closed by a virtual terminal is series-parallel: each leaf
+  # reduces in series onto its parent and the siblings then reduce in parallel.
+  expect_true(sweep_series_parallel(specs$T$edges))
+  # X adds the crossing arc, so two internal nodes and two leaves sit on a
+  # four-cycle that neither reduction touches.
+  expect_false(sweep_series_parallel(specs$X$edges))
+  # The fan is a complete bipartite core between the edge nodes and the
+  # leaves: no vertex of degree two, no parallel pair, nothing reduces.
+  expect_false(sweep_series_parallel(specs$S$edges))
+})
+
+
+# ---- the two-terminal series-parallel instance -----------------------------
+
+test_that("the series-parallel instance is series-parallel and not a tree", {
+  arcs <- sweep_sp_arcs()
+  expect_true(sweep_series_parallel(arcs))
+  # Not a tree: the two parallel service nodes rejoin at one node, which is
+  # the reachability a rooted tree cannot express.
+  expect_equal(sum(arcs$to == "m"), 2L)
+})
+
+test_that("the series-parallel instance is laminar at the substrate's width", {
+  f <- sweep_sp_family()
+  expect_equal(f$n_leaves, 4L)
+  expect_equal(f$n_internal, 4L)
+  expect_equal(length(f$blocks), 8L)      # eight nodes, four of them leaves
+  expect_equal(f$crossing_count, 0L)
+  expect_true(f$crossing_graph_bipartite)
+  expect_true(f$interval_order)
+  expect_true(f$tu_verdict)
+  expect_equal(f$stratum, "laminar")
+
+  # The blocks the arcs give: the source node reaches every leaf, the parallel
+  # pair and their join reach the two leaves behind the join.
+  expect_setequal(f$blocks$d, c("l1", "l2", "l3", "l4"))
+  expect_setequal(f$blocks$e1, c("l1", "l2"))
+  expect_setequal(f$blocks$e2, c("l1", "l2"))
+  expect_setequal(f$blocks$m, c("l1", "l2"))
+
+  # The generated instances' own rule, as every hand-built row uses: an
+  # internal node at 0.6 of the demand expected under its block, a leaf at 1.5
+  # of its own.
+  expect_equal(unname(f$capacity[["d"]]), 81)
+  expect_equal(unname(f$capacity[["m"]]), 40)
+  expect_equal(unname(f$capacity[["l1"]]), 51)
+
+  # Laminar, so the relaxation is integral and the greedy is exact in every
+  # round whatever the values are.
+  rows <- sweep_run(f, instance = "substrate_SP", stratum = f$stratum,
+                    leaf_mix = "uniform", seeds = 1:2, n_rounds = 3L)
+  expect_true(all(rows$integral))
+  expect_equal(max(rows$relative_gap), 0)
+  expect_equal(min(rows$exactness), 1)
+})
+
+test_that("the series-parallel instance is a named row appended to the sweep", {
+  inst <- sweep_instances(n_per_stratum = 2L, seed = 1L, max_draws = 800L)
+  expect_true("substrate_SP" %in% inst$instance)
+  expect_equal(inst$stratum[inst$instance == "substrate_SP"], "laminar")
+  # Appended after the generated families, so neither the generator's draw
+  # sequence nor the names it gives shift: the first generated family is still
+  # the sixth instance of the table.
+  expect_equal(inst$instance[7], "gen_006")
+  expect_equal(inst$instance[nrow(inst)], "substrate_SP")
+  expect_equal(inst$n_leaves[inst$instance == "substrate_SP"], 4L)
+  expect_equal(inst$crossing_count[inst$instance == "substrate_SP"], 0L)
+  expect_true(inst$tu_verdict[inst$instance == "substrate_SP"])
+
+  # ... and it is reported on its own row rather than inside a stratum mean,
+  # like every other hand-built family.
+  expect_true("substrate_SP" %in% eval(formals(sweep_summary)$named))
 })

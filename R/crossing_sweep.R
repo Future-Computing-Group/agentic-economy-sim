@@ -365,6 +365,116 @@ sweep_npubsub_family <- function(n_agents = 90L, lambda = 1.5,
 }
 
 
+#' Is a service graph two-terminal series-parallel?
+#'
+#' The convention the article's structure definition uses closes a service
+#' graph with a virtual source above every node that has no predecessor and a
+#' virtual terminal below every node that has no successor, neither of which
+#' hosts a service. The closed graph is two-terminal series-parallel exactly
+#' when the two reductions take it to the bare source-to-terminal arc:
+#'
+#'   parallel   two arcs joining the same ordered pair of nodes become one
+#'   series     a node with one arc in and one arc out disappears, its two
+#'              arcs replaced by the arc from its predecessor to its successor
+#'
+#' Neither reduction has a choice to get wrong: a graph reduces to one arc
+#' under some order of them exactly when it does under every order, so the
+#' walk takes whichever it finds first and its verdict is the graph's.
+#'
+#' A rooted tree closed this way always reduces -- each leaf goes in series
+#' onto its parent and the siblings then go in parallel -- so the recogniser
+#' separates the shapes rather than the arc counts: it is the fan and the
+#' crossing instance it says no to, and both carry more arcs than the tree.
+#'
+#' @param edges         A data frame of `from` and `to` over the service nodes.
+#' @param source_name   Name given to the virtual source.
+#' @param terminal_name Name given to the virtual terminal.
+#' @return TRUE when the closed graph reduces to one source-to-terminal arc.
+sweep_series_parallel <- function(edges, source_name = "(source)",
+                                  terminal_name = "(terminal)") {
+  nodes <- union(edges$from, edges$to)
+  src   <- setdiff(nodes, edges$to)
+  snk   <- setdiff(nodes, edges$from)
+  E <- cbind(c(rep(source_name, length(src)), as.character(edges$from), snk),
+             c(src, as.character(edges$to), rep(terminal_name, length(snk))))
+
+  repeat {
+    dup <- duplicated(paste(E[, 1], E[, 2], sep = "\r"))
+    if (any(dup)) {
+      E <- E[!dup, , drop = FALSE]
+      next
+    }
+    inner <- setdiff(c(E), c(source_name, terminal_name))
+    deg_in  <- tabulate(match(E[, 2], inner), length(inner))
+    deg_out <- tabulate(match(E[, 1], inner), length(inner))
+    v <- inner[deg_in == 1L & deg_out == 1L][1]
+    if (is.na(v)) break
+    i <- which(E[, 2] == v)
+    j <- which(E[, 1] == v)
+    E <- rbind(E[-c(i, j), , drop = FALSE], cbind(E[i, 1], E[j, 2]))
+  }
+
+  nrow(E) == 1L && E[1, 1] == source_name && E[1, 2] == terminal_name
+}
+
+#' The arcs of the two-terminal series-parallel instance.
+#'
+#' Eight service nodes and four leaves, the substrate's own width, arranged as
+#' a series composition of parallel blocks: the device node serves two leaves
+#' itself and reaches the other two through a parallel pair of edge nodes that
+#' rejoin at one cloud node.
+#'
+#' The rejoin is what puts the instance outside the tree case. A rooted tree
+#' gives every node one predecessor, so a node reachable two ways cannot occur
+#' in one; here the pair is redundant capacity on the same path, which is the
+#' shape a deployment gets from replicating a service rather than from
+#' partitioning one.
+#'
+#' @return A tibble of `from` and `to`.
+sweep_sp_arcs <- function() {
+  tibble(from = c("d",  "d",  "d",  "d",  "e1", "e2", "m",  "m"),
+         to   = c("e1", "e2", "l3", "l4", "m",  "m",  "l1", "l2"))
+}
+
+#' The two-terminal series-parallel instance as a family.
+#'
+#' Blocks are read off the arcs the way the shipped instances' are, so the row
+#' is a statement about the graph rather than about a set system written down
+#' beside it. They come out laminar: the device node's block is every leaf, and
+#' the parallel pair and their join all carry the two leaves behind the join,
+#' so every pair of blocks is nested or equal.
+#'
+#' Which is the point of the row. The sufficient condition the article proves
+#' covers trees and two-terminal series-parallel graphs, and the instances it
+#' evaluates are a tree and a fan, so the series-parallel case rests on the
+#' proof alone. This family is the case: series-parallel, not a tree, not the
+#' fan's uniform matroid, and run through the same certificate and the same
+#' exactness instrument as every other instance of the sweep.
+#'
+#' Capacities follow the generated instances' rule, like every hand-built row,
+#' so the instance is read on the strata's own scale.
+#'
+#' @param n_agents      Agent population the capacities are sized at.
+#' @param lambda        Arrivals per agent per round.
+#' @param bind_fraction Share of its block's expected demand a node carries.
+#' @param leaf_fraction The same for a leaf's own singleton block.
+#' @return A family.
+sweep_sp_family <- function(n_agents = 90L, lambda = 1.5,
+                            bind_fraction = 0.6, leaf_fraction = 1.5) {
+  spec <- list(nodes = tibble(node = c("d", "e1", "e2", "m",
+                                       "l1", "l2", "l3", "l4")),
+               edges = sweep_sp_arcs())
+  anc      <- ancestor_matrix(spec)
+  leaves   <- rownames(anc)
+  internal <- setdiff(colnames(anc), leaves)
+  blocks   <- setNames(lapply(internal, function(v) leaves[anc[, v] > 0]),
+                       internal)
+  sweep_family(leaves, blocks,
+               sweep_capacity(leaves, blocks, n_agents, lambda,
+                              bind_fraction, leaf_fraction))
+}
+
+
 # ---------------------------------------------------------------------------
 # Demand: the substrate's own generator, in matrix coordinates
 # ---------------------------------------------------------------------------
@@ -712,6 +822,15 @@ sweep_instances <- function(n_per_stratum = 20L, seed = 1L, max_draws = 8000L,
             paste(sprintf("%s %d", strata, as.integer(count)), collapse = ", "))
   }
 
+  # The two-terminal series-parallel instance goes in AFTER the draws rather
+  # than beside the other hand-built families, and the placement is the point:
+  # a seventh entry ahead of the loop would take a place in the laminar
+  # stratum's quota and shift every generated family's name by one, so every
+  # row of the table would be a different family from the row before it. Added
+  # here, it is one row appended and nothing else moves.
+  fams[["substrate_SP"]] <- sweep_sp_family(n_agents, lambda, bind_fraction,
+                                            leaf_fraction)
+
   field <- function(what, mode) unname(vapply(fams, function(x) x[[what]], mode))
   tibble(instance   = unname(names(fams)),
          n_leaves   = field("n_leaves", integer(1)),
@@ -776,7 +895,8 @@ sweep_grid <- function(instances, mixes = c("uniform", "skewed")) {
 sweep_summary <- function(rows, named = c("triangle", "substrate_T",
                                           "substrate_X", "substrate_S",
                                           "npubsub_domains",
-                                          "triangle_capacity"),
+                                          "triangle_capacity",
+                                          "substrate_SP"),
                           named_excluded = named) {
   measure <- function(d, label) {
     d %>% summarise(
