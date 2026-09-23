@@ -1671,10 +1671,12 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
 #' The uncontracted arm runs at one level because it has no integrator to
 #' translate at: its row is the reference every contracted cell is paired
 #' against, and running it three times would be the same run under three
-#' labels. Everything else is the architecture block's own design, at its
-#' congestion level -- the driver's defaults, which is the baseline setting of
-#' `node_sensitivity_settings()` -- so the sweep is that block with one knob
-#' added rather than a second experiment.
+#' labels. Everything else is the architecture block's own design, run at both
+#' congestion levels the mechanism block reports (`node_congestion_levels()`):
+#' the baseline level is the driver's defaults and so the architecture block's
+#' own setting, and the calibrated level is where the mechanism block's
+#' latency comparison is read, which is the one the overhead has to be priced
+#' against. The baseline block comes first, then the calibrated one.
 #'
 #' @param seeds  Monte Carlo seeds per cell.
 #' @param levels Overhead levels the contracted arms are run at, in ms.
@@ -1684,7 +1686,7 @@ node_overhead_grid <- function(seeds, levels = c(0, 25, 50)) {
     tidyr::expand_grid(architecture = "naive", enc_overhead_ms = 0),
     tidyr::expand_grid(architecture = c("hybrid_noema", "hybrid_ema"),
                        enc_overhead_ms = levels))
-  tidyr::expand_grid(arms,
+  tidyr::expand_grid(node_congestion_levels(), arms,
                      graph_type = c("tree", "sp", "entangled"),
                      load_level = "high",
                      seed       = seeds)
@@ -1708,7 +1710,8 @@ node_overhead_grid <- function(seeds, levels = c(0, 25, 50)) {
 #' @param lower_is_better Responses whose lead is the baseline minus the arm.
 #' @return One row per cell, architecture and overhead level.
 node_overhead_summary <- function(raw_df,
-                                  cell_vars = c("graph_type", "load_level"),
+                                  cell_vars = c("graph_type", "load_level",
+                                                "congestion"),
                                   baseline = "naive",
                                   metrics = c("median_latency", "welfare",
                                               "tokens_admitted"),

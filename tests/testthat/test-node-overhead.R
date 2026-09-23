@@ -39,8 +39,56 @@ test_that("the overhead grid runs the uncontracted arm at zero only", {
   expect_setequal(unique(g$graph_type), c("tree", "sp", "entangled"))
   expect_equal(unique(g$load_level), "high")
   # naive at one level plus two contracted arms at three, over three
-  # instances and two seeds.
-  expect_equal(nrow(g), 7L * 3L * 2L)
+  # instances, two seeds and both congestion levels.
+  expect_equal(nrow(g), 7L * 3L * 2L * 2L)
+  expect_equal(nrow(node_overhead_grid(seq_len(10))), 420L)
+})
+
+test_that("the overhead grid carries both congestion levels, baseline first", {
+  g <- node_overhead_grid(1:2)
+  lv <- node_congestion_levels()
+  expect_equal(unique(g$congestion), c("baseline", "calibrated"))
+  half <- nrow(g) / 2
+  expect_true(all(g$congestion[seq_len(half)] == "baseline"))
+  # The level decides the two parameters, exactly as in the mechanism grid.
+  m <- match(g$congestion, lv$congestion)
+  expect_equal(g$exec_clamp, lv$exec_clamp[m])
+  expect_equal(g$queue_coef, lv$queue_coef[m])
+  # The baseline block is the driver's defaults, so its rows are the runs the
+  # sweep made before the level was added.
+  expect_true(all(g$exec_clamp[seq_len(half)] == 0.99))
+  expect_true(all(g$queue_coef[seq_len(half)] == 2))
+})
+
+test_that("a baseline row run with its level's parameters is the default run", {
+  a <- node_run_single("tree", "high", N = 90L, seed = 3L, n_rounds = 8L,
+                       architecture = "hybrid_ema", enc_overhead_ms = 25)
+  lv <- node_congestion_levels()
+  b <- node_run_single("tree", "high", N = 90L, seed = 3L, n_rounds = 8L,
+                       architecture = "hybrid_ema", enc_overhead_ms = 25,
+                       exec_clamp = lv$exec_clamp[lv$congestion == "baseline"],
+                       queue_coef = lv$queue_coef[lv$congestion == "baseline"])
+  expect_identical(a, b)
+})
+
+test_that("the summary pairs each arm with naive at its own congestion level", {
+  seeds <- 1:4
+  cell <- function(arch, d, lat, cong) tibble::tibble(
+    graph_type = "tree", load_level = "high", congestion = cong,
+    architecture = arch, enc_overhead_ms = d, seed = seeds,
+    median_latency = lat + seeds, welfare = 1, tokens_admitted = 1)
+  raw <- dplyr::bind_rows(
+    cell("naive", 0, 300, "baseline"), cell("hybrid_ema", 0, 280, "baseline"),
+    cell("naive", 0, 120, "calibrated"), cell("hybrid_ema", 0, 100, "calibrated"),
+    cell("hybrid_ema", 50, 130, "calibrated"))
+  s <- node_overhead_summary(raw)
+  expect_setequal(unique(s$congestion), c("baseline", "calibrated"))
+  arm <- dplyr::filter(s, architecture == "hybrid_ema") %>%
+    dplyr::arrange(congestion, enc_overhead_ms)
+  # Against naive at the same level: 20 at baseline; 20 then -10 calibrated.
+  expect_equal(arm$lead_median_latency, c(20, 20, -10))
+  expect_equal(arm$latency_lead_zero_at[arm$congestion == "calibrated"],
+               c(100 / 3, 100 / 3))
 })
 
 test_that("the overhead summary carries per-cell means and paired leads", {

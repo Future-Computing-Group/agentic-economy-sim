@@ -752,9 +752,11 @@ list(
   # -- what the interface costs to cross -------------------------------------
   # The architecture block with one knob added: the protocol translation the
   # integrator's path pays, swept until the latency it costs overtakes the
-  # latency the contraction buys. The uncontracted arm runs at one level
-  # because it has no integrator to translate at, and it is the reference the
-  # contracted cells are paired against seed by seed.
+  # latency the contraction buys, at both congestion levels the mechanism block
+  # reports (the latency comparison is read at the calibrated one). The
+  # uncontracted arm runs at one overhead level because it has no integrator
+  # to translate at, and it is the reference the contracted cells are paired
+  # against seed by seed, at their own congestion level.
   tar_target(node_exp4_overhead_grid, node_overhead_grid(seq_len(n_seeds))),
   tar_target(
     node_exp4_overhead_raw,
@@ -766,11 +768,14 @@ list(
         N                = node_agent_counts[[node_exp4_overhead_grid$graph_type]],
         architecture     = node_exp4_overhead_grid$architecture,
         enc_overhead_ms  = node_exp4_overhead_grid$enc_overhead_ms,
+        exec_clamp       = node_exp4_overhead_grid$exec_clamp,
+        queue_coef       = node_exp4_overhead_grid$queue_coef,
         n_rounds         = n_rounds,
         deadlines        = task_deadlines,
         lambda_l_default = node_lambda
       ),
-      enc_overhead_ms = node_exp4_overhead_grid$enc_overhead_ms
+      enc_overhead_ms = node_exp4_overhead_grid$enc_overhead_ms,
+      congestion      = node_exp4_overhead_grid$congestion
     ),
     pattern   = map(node_exp4_overhead_grid),
     iteration = "vector"
@@ -1294,7 +1299,8 @@ list(
                            block = "exp4"),
         node_interval_rows(node_exp4_overhead_raw,
                            c("architecture", "enc_overhead_ms", "graph_type",
-                             "load_level"), block = "exp4_overhead"),
+                             "load_level", "congestion"),
+                           block = "exp4_overhead"),
         node_interval_rows(node_exp5_results_raw,
                            c("architecture", "policy", "graph_type",
                              "load_level"), block = "exp5"),
