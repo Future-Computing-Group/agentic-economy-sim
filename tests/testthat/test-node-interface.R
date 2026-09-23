@@ -128,9 +128,11 @@ test_that("the interface levels build the environment the arm names", {
 })
 
 test_that("the maxflow arm over-commits the true instance and the inner arm does not", {
+  # Pinned at the steep level (exec_clamp 0.99, queue_coef 2), where the
+  # over-admitted mix queues hard enough to miss deadlines within 15 rounds.
   run <- function(iface) node_run_single(
     "entangled", "high", N = 90L, seed = 1L, n_rounds = 15L,
-    leaf_mix = "skewed", interface = iface)
+    leaf_mix = "skewed", interface = iface, exec_clamp = 0.99, queue_coef = 2)
 
   off   <- run("off")
   inner <- run("inner")

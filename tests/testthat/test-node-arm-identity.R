@@ -18,7 +18,10 @@ test_that("columns added to a node row leave the arms bit-identical", {
       node_run_single(graph_type, "high", N = 90L, seed = seed, n_rounds = 10L,
                       mechanism = mechanism, p_post_k = p_post_k,
                       architecture = architecture,
-                      lambda_l_default = node_lambda_l())
+                      lambda_l_default = node_lambda_l(),
+                      # The fixture was recorded at the steep level, the
+                      # driver's default at the time, so it is replayed there.
+                      exec_clamp = 0.99, queue_coef = 2)
     })
   # Compared on the columns the fixture recorded. Bit identity holds on the
   # recording platform; on another CPU the last binary digit of a

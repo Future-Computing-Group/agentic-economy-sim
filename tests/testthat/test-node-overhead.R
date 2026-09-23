@@ -54,20 +54,20 @@ test_that("the overhead grid carries both congestion levels, baseline first", {
   m <- match(g$congestion, lv$congestion)
   expect_equal(g$exec_clamp, lv$exec_clamp[m])
   expect_equal(g$queue_coef, lv$queue_coef[m])
-  # The baseline block is the driver's defaults, so its rows are the runs the
-  # sweep made before the level was added.
+  # The baseline block is the steep level, named explicitly now that the
+  # driver's default is the calibrated one.
   expect_true(all(g$exec_clamp[seq_len(half)] == 0.99))
   expect_true(all(g$queue_coef[seq_len(half)] == 2))
 })
 
-test_that("a baseline row run with its level's parameters is the default run", {
+test_that("a calibrated row run with its level's parameters is the default run", {
   a <- node_run_single("tree", "high", N = 90L, seed = 3L, n_rounds = 8L,
                        architecture = "hybrid_ema", enc_overhead_ms = 25)
   lv <- node_congestion_levels()
   b <- node_run_single("tree", "high", N = 90L, seed = 3L, n_rounds = 8L,
                        architecture = "hybrid_ema", enc_overhead_ms = 25,
-                       exec_clamp = lv$exec_clamp[lv$congestion == "baseline"],
-                       queue_coef = lv$queue_coef[lv$congestion == "baseline"])
+                       exec_clamp = lv$exec_clamp[lv$congestion == "calibrated"],
+                       queue_coef = lv$queue_coef[lv$congestion == "calibrated"])
   expect_identical(a, b)
 })
 

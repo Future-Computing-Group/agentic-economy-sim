@@ -937,6 +937,9 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param exec_clamp       Ceiling on the utilisation the execution model's
 #'                         queue term reads.
 #' @param queue_coef       Multiplier on the execution model's queue term.
+#'                         Both default to the pipeline's reported level,
+#'                         `node_congestion_default()`; the steep level is run
+#'                         as an explicit setting where a block reports it.
 #' @param reserve_markup   Multiplier on the per-node reserve the market arms
 #'                         clamp their prices to: the market's tuned knob, the
 #'                         counterpart of the posted price's markup.
@@ -979,7 +982,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             spec = NULL,
                             exact_reference = TRUE,
                             reserve_markup = 1,
-                            exec_clamp = 0.99, queue_coef = 2,
+                            exec_clamp = node_congestion_default()$exec_clamp,
+                            queue_coef = node_congestion_default()$queue_coef,
                             posted_nodes = NULL,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3,
@@ -1673,10 +1677,10 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
 #' against, and running it three times would be the same run under three
 #' labels. Everything else is the architecture block's own design, run at both
 #' congestion levels the mechanism block reports (`node_congestion_levels()`):
-#' the baseline level is the driver's defaults and so the architecture block's
-#' own setting, and the calibrated level is where the mechanism block's
-#' latency comparison is read, which is the one the overhead has to be priced
-#' against. The baseline block comes first, then the calibrated one.
+#' the calibrated level is the driver's default and the level the latency
+#' comparison is read at, which is the one the overhead has to be priced
+#' against, and the steep baseline level is its explicit sensitivity. The
+#' baseline block comes first, then the calibrated one.
 #'
 #' @param seeds  Monte Carlo seeds per cell.
 #' @param levels Overhead levels the contracted arms are run at, in ms.
@@ -1823,6 +1827,20 @@ node_congestion_levels <- function() {
   s[match(c("baseline", "calibrated"), s$setting),
     c("setting", "exec_clamp", "queue_coef")] %>%
     rename(congestion = "setting")
+}
+
+#' The congestion level every node block runs at unless it names one.
+#'
+#' The calibrated row of `node_congestion_levels()`: the queue term measured
+#' against the testbed, and the level the pipeline reports. The steep level is
+#' the explicit sensitivity: the mechanism grids run both levels by name and the
+#' sensitivity sweep varies one factor at a time from it. Read off the level
+#' table rather than typed, so the default and the grids cannot drift apart.
+#'
+#' @return A list of `exec_clamp` and `queue_coef`.
+node_congestion_default <- function() {
+  lv <- node_congestion_levels()
+  as.list(lv[lv$congestion == "calibrated", c("exec_clamp", "queue_coef")])
 }
 
 #' The node substrate's own mechanism grid.
@@ -2443,7 +2461,9 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
                                  lambda_l_default = node_lambda_l(),
                                  alpha = 50, p = 1.2, salvage = 0.0,
                                  eta = price_eta, success_lr = 0.3,
-                                 save_profile = FALSE) {
+                                 save_profile = FALSE,
+                                 exec_clamp = node_congestion_default()$exec_clamp,
+                                 queue_coef = node_congestion_default()$queue_coef) {
   graph_type <- match.arg(graph_type)
   mechanism  <- match.arg(mechanism)
   N   <- N %||% node_agents()[[graph_type]]
@@ -2472,7 +2492,8 @@ node_convergence_run <- function(graph_type = c("tree", "sp", "entangled"),
                        cleared$clearing$prices$tier)[names(capv)]
     ok <- node_market_equilibrium(demand, capv, prices, reserve)
 
-    results_t <- execute_allocation(cleared$allocation, env)
+    results_t <- execute_allocation(cleared$allocation, env, util_clamp = exec_clamp,
+                                    queue_coefficient = queue_coef)
     agents    <- update_trust(agents, results_t)
     prev_util <- compute_utilisation_per_node(env, cleared$allocation)
     ms <- market_update_from_results(
@@ -2632,7 +2653,9 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
                                  leaf_mix = "uniform",
                                  lambda_l_default = node_lambda_l(),
                                  alpha = 50, p = 1.2, salvage = 0.0,
-                                 eta = price_eta, success_lr = 0.3) {
+                                 eta = price_eta, success_lr = 0.3,
+                                 exec_clamp = node_congestion_default()$exec_clamp,
+                                 queue_coef = node_congestion_default()$queue_coef) {
   graph_type <- match.arg(graph_type)
   mechanism  <- match.arg(mechanism)
   N   <- N %||% node_agents()[[graph_type]]
@@ -2661,7 +2684,8 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
         alpha = alpha, p = p, lambda_l_default = lambda_l_default,
         salvage = salvage, iters = iters, eta = eta, price_rule = rule)
       welfare <- compute_welfare(
-        execute_allocation(cleared$allocation, env, latency_noise_cv = 0), env,
+        execute_allocation(cleared$allocation, env, latency_noise_cv = 0,
+                         util_clamp = exec_clamp, queue_coefficient = queue_coef), env,
         cleared$clearing$prices, lambda_l_default = lambda_l_default,
         salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05)
       list(prices = cleared$clearing$prices,
@@ -2690,7 +2714,8 @@ node_determinacy_run <- function(graph_type = c("tree", "sp", "entangled"),
     cleared   <- from$carried$cleared
     ms        <- append_price_history(cleared$market_state,
                                       cleared$market_state$prices)
-    results_t <- execute_allocation(cleared$allocation, env)
+    results_t <- execute_allocation(cleared$allocation, env, util_clamp = exec_clamp,
+                                    queue_coefficient = queue_coef)
     agents    <- update_trust(agents, results_t)
     prev_util <- compute_utilisation_per_node(env, cleared$allocation)
     ms <- market_update_from_results(
@@ -2776,7 +2801,9 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
                                       leaf_mix = "uniform",
                                       lambda_l_default = node_lambda_l(),
                                       alpha = 50, p = 1.2, salvage = 0.0,
-                                      eta = price_eta, success_lr = 0.3) {
+                                      eta = price_eta, success_lr = 0.3,
+                                      exec_clamp = node_congestion_default()$exec_clamp,
+                                      queue_coef = node_congestion_default()$queue_coef) {
   graph_type <- match.arg(graph_type)
   N   <- N %||% node_agents()[[graph_type]]
   set.seed(seed)
@@ -2794,7 +2821,8 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
       alpha = alpha, p = p, lambda_l_default = lambda_l_default,
       salvage = salvage, iters = iters, eta = eta)
     welfare_of <- function(cleared) compute_welfare(
-      execute_allocation(cleared$allocation, env, latency_noise_cv = 0), env,
+      execute_allocation(cleared$allocation, env, latency_noise_cv = 0,
+                         util_clamp = exec_clamp, queue_coefficient = queue_coef), env,
       cleared$clearing$prices, lambda_l_default = lambda_l_default,
       salvage = salvage, cong_cost = TRUE, cong_gamma = 0.05)
 
@@ -2846,7 +2874,8 @@ node_report_stability_run <- function(graph_type = c("tree", "sp", "entangled"),
 
     ms        <- append_price_history(base$market_state,
                                       base$market_state$prices)
-    results_t <- execute_allocation(base$allocation, env)
+    results_t <- execute_allocation(base$allocation, env, util_clamp = exec_clamp,
+                                    queue_coefficient = queue_coef)
     agents    <- update_trust(agents, results_t)
     prev_util <- compute_utilisation_per_node(env, base$allocation)
     ms <- market_update_from_results(
@@ -2991,7 +3020,9 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
                            leaf_mix = "uniform",
                            lambda_l_default = node_lambda_l(),
                            alpha = 50, p = 1.2, salvage = 0.0,
-                           eta = price_eta, success_lr = 0.3) {
+                           eta = price_eta, success_lr = 0.3,
+                           exec_clamp = node_congestion_default()$exec_clamp,
+                           queue_coef = node_congestion_default()$queue_coef) {
   graph_type   <- match.arg(graph_type)
   architecture <- match.arg(architecture)
   shock        <- match.arg(shock)
@@ -3042,7 +3073,8 @@ node_shock_run <- function(graph_type = c("tree", "sp", "entangled"),
       ok <- node_market_equilibrium(demand, capv, prices,
                                     eA$reserve_price %||% 0)
 
-      results_t <- execute_allocation(cleared$allocation, eT)
+      results_t <- execute_allocation(cleared$allocation, eT, util_clamp = exec_clamp,
+                                    queue_coefficient = queue_coef)
       agents    <- update_trust(agents, results_t)
       prev_util <- compute_utilisation_per_node(eA, cleared$allocation)
       welfare   <- compute_welfare(results_t, eT, cleared$clearing$prices,

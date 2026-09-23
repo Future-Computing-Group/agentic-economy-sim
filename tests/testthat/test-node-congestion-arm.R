@@ -51,9 +51,12 @@ test_that("the estimate is uncapped where the execution model clamps", {
 })
 
 test_that("the congestion-consistent arm is the market with one estimate replaced", {
+  # Measured at the steep level (exec_clamp 0.99, queue_coef 2), where the
+  # lagged signal's two-cycle is pinned; the default level is the calibrated one.
   one <- function(m) node_run_single("tree", "high", N = 90L, seed = 1L,
                                      n_rounds = 10L, mechanism = m,
-                                     lambda_l_default = node_lambda_l())
+                                     lambda_l_default = node_lambda_l(),
+                                     exec_clamp = 0.99, queue_coef = 2)
   mk <- one("market")
   cc <- one("market_cc")
 

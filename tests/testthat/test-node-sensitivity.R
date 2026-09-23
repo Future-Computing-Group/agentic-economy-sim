@@ -32,7 +32,10 @@ test_that("the driver passes the queue term to the arm and to its references", {
                                        n_rounds = 6L,
                                        lambda_l_default = node_lambda_l(), ...)
   base <- one()
-  expect_equal(one(exec_clamp = 0.99, queue_coef = 2), base, tolerance = 1e-12)
+  # The default is the reported level, so naming it changes nothing.
+  d <- node_congestion_default()
+  expect_equal(one(exec_clamp = d$exec_clamp, queue_coef = d$queue_coef), base,
+               tolerance = 1e-12)
 
   hot <- one(exec_clamp = 0.995, queue_coef = 4)
   expect_gt(hot$median_latency, base$median_latency)
