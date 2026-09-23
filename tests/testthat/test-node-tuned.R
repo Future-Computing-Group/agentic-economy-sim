@@ -35,6 +35,24 @@ test_that("the seeds a knob is tuned on are never the seeds it is reported on", 
   expect_true(all(sp$evaluation > targets_constants("n_seeds")$n_seeds))
 })
 
+test_that("the tuned comparison is reported on twenty held-out seeds", {
+  sp <- node_tuning_split()
+  expect_equal(sp$tuning, 1:5)
+  expect_equal(sp$evaluation, 11:30)
+  # Seven arms (three posted disciplines and two market arms at their tuned
+  # knob, two arms with nothing to tune) in 24 cells on 20 seeds.
+  knobs <- tidyr::expand_grid(
+    mechanism = c("posted_price", "posted_price_fcfs", "posted_price_edf",
+                  "market", "market_cc"), p_post_k = 1, reserve_markup = 1)
+  tuning <- tidyr::expand_grid(knobs, graph_type = c("tree", "sp", "entangled"),
+                               load_level = c("medium", "high"),
+                               architecture = c("naive", "hybrid_noema"),
+                               congestion = c("baseline", "calibrated"),
+                               seed = sp$tuning) %>%
+    dplyr::mutate(welfare = seed)
+  expect_equal(nrow(node_eval_grid(tuning, sp$evaluation)), 7L * 24L * 20L)
+})
+
 test_that("the reserve markup lifts the floor the tatonnement clamps to", {
   env <- tuned_env(); tasks <- tuned_tasks(env)
   base <- tuned_clear(env, tasks)

@@ -2078,10 +2078,12 @@ node_tuning_posted_levels <- function() c(node_posted_levels(), 0.5, 0.75)
 #'
 #' Disjoint by construction, and the reported ones sit above every seed the
 #' mechanism block runs, so no number in the tuned table was ever seen while
-#' the knob was being chosen.
+#' the knob was being chosen. The tuned comparison is where arms are ranked
+#' against each other cell by cell, so it is reported on twenty seeds rather
+#' than the ten every other block runs; the tuning seeds are unchanged.
 #'
 #' @return A list of `tuning` and `evaluation` seed vectors.
-node_tuning_split <- function() list(tuning = 1:5, evaluation = 11:20)
+node_tuning_split <- function() list(tuning = 1:5, evaluation = 11:30)
 
 #' The grid the knobs are chosen on.
 #'
