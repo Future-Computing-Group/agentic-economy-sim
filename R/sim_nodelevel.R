@@ -949,6 +949,12 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param iters            Tatonnement iterations per round.
 #' @param eta              Price step size.
 #' @param success_lr       Learning rate for the success model.
+#' @param enc_overhead_ms  Additive protocol-translation latency charged on
+#'                         the integrator's path, the node-substrate
+#'                         counterpart of the per-tier encapsulation knob. It
+#'                         is paid by the tasks that cross the interface, so
+#'                         it reaches the contracted architectures only and is
+#'                         identically zero where the interface is off.
 #' @return A single-row tibble of summary metrics.
 node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                            "agentic"),
@@ -975,7 +981,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             exec_clamp = 0.99, queue_coef = 2,
                             posted_nodes = NULL,
                             alpha = 50, p = 1.2, salvage = 0.0,
-                            iters = 15L, eta = price_eta, success_lr = 0.3) {
+                            iters = 15L, eta = price_eta, success_lr = 0.3,
+                            enc_overhead_ms = 0) {
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
   leaf_mix   <- match.arg(leaf_mix)
@@ -987,6 +994,12 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   interface <- match.arg(interface %||% arch$interface,
                          c("off", "inner", "maxflow"))
   beta      <- arch$beta
+  # The protocol translation is a latency on the path a task takes THROUGH the
+  # integrator, so what charges it is the interface being on and not the arm's
+  # name: an uncontracted arm has no integrator to translate at. The two
+  # references are computed off the market and never pay it, so the overhead
+  # moves the arm against a fixed reference rather than moving both.
+  enc_ms <- if (interface == "off") 0 else enc_overhead_ms
 
   set.seed(seed)
   # Two environments, and the difference between them IS the interface: the
@@ -1191,7 +1204,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     # routing cannot honour admits a mix the physical nodes still have to
     # queue, which is where an over-committing interface pays for itself.
     results_t <- execute_allocation(allocation, envT, util_clamp = exec_clamp,
-                                    queue_coefficient = queue_coef)
+                                    queue_coefficient = queue_coef,
+                                    enc_overhead_ms = enc_ms)
     if (nrow(results_t) > 0 &&
         !all(c("deadline", "value_base") %in% names(results_t))) {
       results_t <- results_t %>%
@@ -1591,6 +1605,119 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
            mutate(across(all_of(cells), factor)),
          stats::reformulate(paste(cells, collapse = " * "),
                             response = "welfare")))
+}
+
+
+# ===========================================================================
+# What the interface costs to cross: the overhead sweep on this substrate
+# ===========================================================================
+
+#' The grid the encapsulation overhead is swept on.
+#'
+#' The uncontracted arm runs at one level because it has no integrator to
+#' translate at: its row is the reference every contracted cell is paired
+#' against, and running it three times would be the same run under three
+#' labels. Everything else is the architecture block's own design, at its
+#' congestion level -- the driver's defaults, which is the baseline setting of
+#' `node_sensitivity_settings()` -- so the sweep is that block with one knob
+#' added rather than a second experiment.
+#'
+#' @param seeds  Monte Carlo seeds per cell.
+#' @param levels Overhead levels the contracted arms are run at, in ms.
+#' @return A tibble with one row per branch.
+node_overhead_grid <- function(seeds, levels = c(0, 25, 50)) {
+  arms <- bind_rows(
+    tidyr::expand_grid(architecture = "naive", enc_overhead_ms = 0),
+    tidyr::expand_grid(architecture = c("hybrid_noema", "hybrid_ema"),
+                       enc_overhead_ms = levels))
+  tidyr::expand_grid(arms,
+                     graph_type = c("tree", "sp", "entangled"),
+                     load_level = "high",
+                     seed       = seeds)
+}
+
+#' Where the overhead the interface costs overtakes what it buys.
+#'
+#' Per cell the means of the responses at each level, and beside them the
+#' contracted arm's lead over the uncontracted one, taken seed by seed so that
+#' whatever the seed did to both arms at once cancels. A lead is signed so
+#' that positive is better for the arm: less latency, more welfare, more
+#' tokens. The break-even is read off the latency lead by linear interpolation
+#' between the levels that bracket zero, and is NA where the swept levels
+#' never bracket it -- reading a crossing past the last level would invent the
+#' number the sweep exists to measure.
+#'
+#' @param raw_df          Per-seed results of the overhead grid.
+#' @param cell_vars       The variables a comparison is made inside.
+#' @param baseline        The architecture the leads are taken against.
+#' @param metrics         Responses the lead is taken on.
+#' @param lower_is_better Responses whose lead is the baseline minus the arm.
+#' @return One row per cell, architecture and overhead level.
+node_overhead_summary <- function(raw_df,
+                                  cell_vars = c("graph_type", "load_level"),
+                                  baseline = "naive",
+                                  metrics = c("median_latency", "welfare",
+                                              "tokens_admitted"),
+                                  lower_is_better = "median_latency") {
+  cell_vars <- intersect(cell_vars, names(raw_df))
+  metrics   <- intersect(metrics, names(raw_df))
+  grp       <- c(cell_vars, "architecture", "enc_overhead_ms")
+
+  means <- raw_df %>%
+    group_by(across(all_of(grp))) %>%
+    summarise(across(all_of(metrics), \(x) mean(x, na.rm = TRUE)),
+              n_seeds = dplyr::n_distinct(seed), .groups = "drop")
+
+  ref <- raw_df %>%
+    filter(architecture == baseline, enc_overhead_ms == 0) %>%
+    select(all_of(c(cell_vars, "seed", metrics)))
+  paired <- raw_df %>%
+    filter(architecture != baseline) %>%
+    left_join(ref, by = c(cell_vars, "seed"), suffix = c("", ".ref"))
+
+  sgn <- ifelse(metrics %in% lower_is_better, 1, -1)
+  key <- function(d) do.call(paste, c(lapply(grp, function(v)
+    as.character(d[[v]])), list(sep = "\r")))
+  leads <- bind_rows(lapply(split(paired, key(paired)), function(g) {
+    out <- g[1, grp]
+    for (j in seq_along(metrics)) {
+      m  <- metrics[[j]]
+      d  <- sgn[[j]] * (g[[paste0(m, ".ref")]] - g[[m]])
+      iv <- .ratio_interval(d)
+      out[[paste0("lead_", m)]]        <- iv$mean
+      out[[paste0("lead_", m, "_lo")]] <- iv$lo
+      out[[paste0("lead_", m, "_hi")]] <- iv$hi
+      out[[paste0("lead_", m, "_n")]]  <- sum(is.finite(d))
+    }
+    out
+  }))
+
+  out <- left_join(means, leads, by = grp)
+  if ("lead_median_latency" %in% names(out)) {
+    out <- out %>%
+      group_by(across(all_of(c(cell_vars, "architecture")))) %>%
+      mutate(latency_lead_zero_at = .lead_zero_at(enc_overhead_ms,
+                                                  lead_median_latency)) %>%
+      ungroup()
+  }
+  out
+}
+
+#' The x at which a measured lead crosses zero, with no extrapolation.
+#'
+#' @param x Overhead levels.
+#' @param y The lead measured at each.
+#' @return The interpolated crossing, or NA where the levels do not bracket it.
+.lead_zero_at <- function(x, y) {
+  o  <- order(x)
+  x  <- x[o]; y <- y[o]
+  ok <- is.finite(x) & is.finite(y)
+  x  <- x[ok]; y <- y[ok]
+  if (length(x) < 2L) return(NA_real_)
+  i <- which(y[-length(y)] * y[-1] <= 0 & y[-length(y)] != y[-1])
+  if (length(i) == 0L) return(NA_real_)
+  i <- i[[1]]
+  x[[i]] + (x[[i + 1L]] - x[[i]]) * (0 - y[[i]]) / (y[[i + 1L]] - y[[i]])
 }
 
 

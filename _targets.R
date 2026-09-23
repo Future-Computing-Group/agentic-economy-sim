@@ -747,6 +747,35 @@ list(
              stat_exp4_factorial(bind_rows(node_exp4_results_raw),
                                  cell_vars = c("graph_type", "load_level"))),
 
+  # -- what the interface costs to cross -------------------------------------
+  # The architecture block with one knob added: the protocol translation the
+  # integrator's path pays, swept until the latency it costs overtakes the
+  # latency the contraction buys. The uncontracted arm runs at one level
+  # because it has no integrator to translate at, and it is the reference the
+  # contracted cells are paired against seed by seed.
+  tar_target(node_exp4_overhead_grid, node_overhead_grid(seq_len(n_seeds))),
+  tar_target(
+    node_exp4_overhead_raw,
+    dplyr::mutate(
+      node_run_single(
+        graph_type       = node_exp4_overhead_grid$graph_type,
+        load_level       = node_exp4_overhead_grid$load_level,
+        seed             = node_exp4_overhead_grid$seed,
+        N                = node_agent_counts[[node_exp4_overhead_grid$graph_type]],
+        architecture     = node_exp4_overhead_grid$architecture,
+        enc_overhead_ms  = node_exp4_overhead_grid$enc_overhead_ms,
+        n_rounds         = n_rounds,
+        deadlines        = task_deadlines,
+        lambda_l_default = node_lambda
+      ),
+      enc_overhead_ms = node_exp4_overhead_grid$enc_overhead_ms
+    ),
+    pattern   = map(node_exp4_overhead_grid),
+    iteration = "vector"
+  ),
+  tar_target(node_exp4_overhead_summary,
+             node_overhead_summary(bind_rows(node_exp4_overhead_raw))),
+
   # -- the interface block, the node-level successor of the faithfulness arm --
   tar_target(
     node_exp10_param_grid,
