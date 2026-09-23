@@ -1018,13 +1018,15 @@ posted_price_anchor_per_leaf <- function(env, anc, k = 1,
 #' @param order     The discipline the participants are served in: "value"
 #'                  ranks them by expected value, "arrival" serves them in the
 #'                  order they arrived, which is what a posted price in
-#'                  deployment does. The screen and the payment are the same
+#'                  deployment does, and "deadline" serves the earliest
+#'                  deadline first, ties in arrival order: a deadline is a
+#'                  contract term a broker can verify, a value is not. The screen and the payment are the same
 #'                  either way, so the two differ only where capacity binds.
 #' @param arrival   Each task's position in the arrival order (a permutation
 #'                  of the rows); the row order when not given.
 #' @return The admitted tasks, with a `payment` column.
 posted_price_allocate <- function(tasks_all, env, ev, p_post,
-                                  order = c("value", "arrival"),
+                                  order = c("value", "arrival", "deadline"),
                                   arrival = seq_len(nrow(tasks_all))) {
   order <- match.arg(order)
   # The screen is elementwise, but the packer rations the tasks that clear it,
@@ -1040,8 +1042,12 @@ posted_price_allocate <- function(tasks_all, env, ev, p_post,
   # reversed arrival position among the participants, strictly positive so the
   # kernel's non-positive-rank skip never drops a participant the screen kept.
   rank <- if (order == "value") ev[keep] else {
-    n <- nrow(kept)
-    rev(seq_len(n))[rank(arrival[keep], ties.method = "first")]
+    n   <- nrow(kept)
+    pos <- if (order == "arrival") order(arrival[keep])
+           else order(kept$deadline, arrival[keep])
+    key <- numeric(n)
+    key[pos] <- rev(seq_len(n))
+    key
   }
   pack_tasks_greedy(kept, rank, env) %>%
     mutate(payment = p_task[keep][match(task_id, kept$task_id)])

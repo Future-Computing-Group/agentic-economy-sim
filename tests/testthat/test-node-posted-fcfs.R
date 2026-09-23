@@ -113,7 +113,8 @@ test_that("the tuning grid carries the new arm at the posted levels, appended", 
   old <- (length(node_tuning_posted_levels()) +
             2 * length(node_reserve_markups())) * 12 * 2 * 2
   expect_false("posted_price_fcfs" %in% g$mechanism[seq_len(old)])
-  expect_setequal(unique(g$mechanism[(old + 1L):nrow(g)]), "posted_price_fcfs")
+  n_fcfs <- sum(g$mechanism == "posted_price_fcfs")
+  expect_setequal(unique(g$mechanism[old + seq_len(n_fcfs)]), "posted_price_fcfs")
 })
 
 test_that("the new arm is tuned and reported like the arm it comparates", {
@@ -168,8 +169,8 @@ test_that("the mechanism grid runs the new arm at every posted level, appended",
   # two congestion levels.
   expect_equal(sum(g$mechanism == "posted_price_fcfs"),
                9L * 3L * 2L * 2L * 10L * 2L)
-  # Appended after every row the block already ran.
-  old <- nrow(g) - sum(g$mechanism == "posted_price_fcfs")
+  # Appended after every row the block already ran (the deadline arm follows).
+  old <- min(which(g$mechanism == "posted_price_fcfs")) - 1L
   expect_equal(old, 4800L)
   expect_false("posted_price_fcfs" %in% g$mechanism[seq_len(old)])
 })
@@ -223,4 +224,87 @@ test_that("a given arrival order admits its prefix when capacity binds", {
   # The tasks that arrived first, in the order they arrived.
   expect_equal(alloc$task_id,
                head(tasks$task_id[order(pos)], nrow(alloc)))
+})
+
+
+# ---- the deadline-priority posted price ------------------------------------
+#
+# The same screen at the posted level, then admission by earliest deadline
+# among those who clear it, ties broken by the round's arrival order. A
+# deadline is a contract term a broker can verify and a value is not, so the
+# rule reads nothing the participants could misreport beyond the screen.
+
+edf_tasks <- function(env, n = 60L, seed = 5L) {
+  t <- fcfs_tasks(env, n, seed)
+  set.seed(seed + 1L)
+  t$deadline <- sample(c(500, 750, 1000), n, replace = TRUE)
+  t
+}
+
+test_that("the deadline arm admits the screened set while capacity is slack", {
+  env   <- fcfs_env()
+  tasks <- edf_tasks(env)
+  ev    <- fcfs_ev(tasks)
+  p     <- stats::median(ev)
+  by_value <- posted_price_allocate(tasks, env, ev, p)
+  by_edf   <- posted_price_allocate(tasks, env, ev, p, order = "deadline")
+  expect_setequal(by_edf$task_id, tasks$task_id[ev > p])
+  expect_setequal(by_edf$task_id, by_value$task_id)
+})
+
+test_that("where capacity binds the earliest deadlines go first, ties by arrival", {
+  env   <- fcfs_env(scale = 0.1)
+  tasks <- edf_tasks(env)
+  ev    <- fcfs_ev(tasks)
+  p     <- min(ev) / 2
+  pos   <- node_arrival_order(nrow(tasks), seed = 2L, t = 7L)
+  alloc <- posted_price_allocate(tasks, env, ev, p, order = "deadline",
+                                 arrival = pos)
+  expect_lt(nrow(alloc), nrow(tasks))
+  want <- head(tasks$task_id[order(tasks$deadline, pos)], nrow(alloc))
+  expect_equal(alloc$task_id, want)
+  expect_true(all(alloc$payment == p))
+})
+
+test_that("the driver runs the deadline arm at the same anchor", {
+  one <- function(m) node_run_single("tree", "high", N = 90L, seed = 1L,
+                                     n_rounds = 8L, mechanism = m, p_post_k = 2)
+  edf    <- one("posted_price_edf")
+  posted <- one("posted_price")
+  expect_equal(edf$mechanism, "posted_price_edf")
+  expect_equal(edf$mean_unit_cost, posted$mean_unit_cost)
+  expect_equal(edf$optimum_ex_post, posted$optimum_ex_post)
+  expect_false(isTRUE(all.equal(edf$welfare, posted$welfare)))
+})
+
+test_that("the deadline arm is tuned, gridded and labelled like the other posted arms", {
+  tg <- node_tuning_grid(c(1L, 2L))
+  expect_setequal(unique(tg$p_post_k[tg$mechanism == "posted_price_edf"]),
+                  node_tuning_posted_levels())
+  # Appended after the value-ranked, market and arrival-order blocks.
+  old <- (2 * length(node_tuning_posted_levels()) +
+            2 * length(node_reserve_markups())) * 12 * 2 * 2
+  expect_setequal(unique(tg$mechanism[(old + 1L):nrow(tg)]), "posted_price_edf")
+
+  mg <- node_exp6_mechanism_grid(n_seeds = 10L)
+  expect_setequal(unique(mg$p_post_k[mg$mechanism == "posted_price_edf"]),
+                  node_posted_levels())
+  n_edf <- sum(mg$mechanism == "posted_price_edf")
+  expect_equal(n_edf, 9L * 3L * 2L * 2L * 10L * 2L)
+  expect_setequal(unique(mg$mechanism[(nrow(mg) - n_edf + 1L):nrow(mg)]),
+                  "posted_price_edf")
+
+  expect_equal(node_knob_at_boundary("posted_price_edf",
+                                     max(node_tuning_posted_levels()), 1), TRUE)
+  raw <- tidyr::expand_grid(
+    mechanism = "posted_price_edf", p_post_k = c(1, 2), graph_type = "tree",
+    load_level = "high", architecture = "naive", seed = 1:4) %>%
+    dplyr::bind_rows(tidyr::expand_grid(
+      mechanism = "greedy_ev", p_post_k = 1, graph_type = "tree",
+      load_level = "high", architecture = "naive", seed = 1:4)) %>%
+    dplyr::mutate(median_latency = seed + p_post_k, drop_rate = seed / 10,
+                  welfare = seed * p_post_k, mean_price_volatility = 0,
+                  efficiency = 0.5)
+  groups <- unique(stat_exp6(raw)$per_topo_load[[1]]$ci$mechanism)
+  expect_true(all(c("posted_price_edf_k1", "posted_price_edf_k2") %in% groups))
 })

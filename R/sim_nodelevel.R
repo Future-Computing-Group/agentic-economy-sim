@@ -999,7 +999,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                           "greedy_ev", "posted_price", "k8s",
                                           "market_cc", "posted_price_matched",
                                           "market_posted_slice", "market_asc",
-                                          "posted_price_fcfs"),
+                                          "posted_price_fcfs",
+                                          "posted_price_edf"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
@@ -1171,7 +1172,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
           lambda_l_default = lambda_l_default, salvage = salvage))
 
       if (mechanism %in% c("posted_price", "posted_price_matched",
-                           "posted_price_fcfs")) {
+                           "posted_price_fcfs", "posted_price_edf")) {
         p_task <- if (mechanism == "posted_price_matched") {
           # One dose for every instance, so the cross-instance ordering is
           # read at equal dose rather than at each instance's own path cost.
@@ -1181,12 +1182,14 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                               k = p_post_k)[
                                                 as.character(tasks_all$recipe)])
         }
-        # The arrival-order level is the same mechanism under the service
-        # discipline a posted price has in deployment: the operator does not
-        # rank the participants it has already priced.
+        # The arrival-order and deadline levels are the same mechanism under
+        # the service disciplines a posted price can have without reading
+        # values: the order participants arrived in, or the deadline their
+        # contract states, ties broken by arrival.
         allocation   <- posted_price_allocate(
           tasks_all, env, scores, p_task,
-          order = if (mechanism == "posted_price_fcfs") "arrival" else "value",
+          order = switch(mechanism, posted_price_fcfs = "arrival",
+                         posted_price_edf = "deadline", "value"),
           arrival = node_arrival_order(n_gen, seed, t))
         # The price is what agents face whether or not they take it, so it is
         # recorded every round, as the market arm records what it cleared at.
@@ -1913,6 +1916,14 @@ node_exp6_mechanism_grid <- function(n_seeds) {
       graph_type   = c("tree", "sp", "entangled"),
       load_level   = c("medium", "high"),
       architecture = c("naive", "hybrid"),
+      seed         = seq_len(n_seeds)),
+    # The deadline-priority posted price at the same levels, appended after it.
+    tidyr::expand_grid(
+      mechanism    = "posted_price_edf",
+      p_post_k     = node_posted_levels(),
+      graph_type   = c("tree", "sp", "entangled"),
+      load_level   = c("medium", "high"),
+      architecture = c("naive", "hybrid"),
       seed         = seq_len(n_seeds)))
   # Every arm at both congestion levels: the comparison and the level it is
   # read at are one measurement, not a headline and a footnote.
@@ -2090,6 +2101,10 @@ node_tuning_grid <- function(seeds) {
     # content, and the existing rows reproduce.
     tidyr::expand_grid(mechanism = "posted_price_fcfs",
                        p_post_k = node_tuning_posted_levels(),
+                       reserve_markup = 1),
+    # The deadline-priority arm over the same levels, appended after it.
+    tidyr::expand_grid(mechanism = "posted_price_edf",
+                       p_post_k = node_tuning_posted_levels(),
                        reserve_markup = 1))
   tidyr::expand_grid(
     arms,
@@ -2193,7 +2208,8 @@ node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
 #' list repeated at three sites is a list that drifts at one of them.
 #'
 #' @return Character vector of mechanism levels.
-.posted_knob_arms <- function() c("posted_price", "posted_price_fcfs")
+.posted_knob_arms <- function() c("posted_price", "posted_price_fcfs",
+                                   "posted_price_edf")
 
 #' The level a mechanism's own knob was run at.
 #'
