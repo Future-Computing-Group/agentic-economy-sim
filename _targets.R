@@ -609,7 +609,8 @@ list(
   ),
   tar_target(node_exp1_summary_table,
              node_aggregate(node_exp1_results_raw, c("graph_type", "load_level"))),
-  tar_target(node_stats_exp1, stat_exp1(bind_rows(node_exp1_results_raw))),
+  tar_target(node_stats_exp1, stat_exp1(bind_rows(node_exp1_results_raw),
+                                        metrics = node_metrics())),
 
   # -- the population sweep --------------------------------------------------
   tar_target(node_exp2_param_grid, node_sweep_grid(n_seeds)),
@@ -740,7 +741,8 @@ list(
   tar_target(node_exp4_summary_table,
              node_aggregate(node_exp4_results_raw,
                             c("architecture", "graph_type", "load_level"))),
-  tar_target(node_stats_exp4, stat_exp4(bind_rows(node_exp4_results_raw))),
+  tar_target(node_stats_exp4, stat_exp4(bind_rows(node_exp4_results_raw),
+                                        metrics = node_metrics())),
   # One matched population per topology, so N is not a cell variable here: as a
   # factor of the model it would carry a single level inside every cell.
   tar_target(node_stats_exp4_factorial,
@@ -875,7 +877,8 @@ list(
              node_aggregate(node_exp6_results_raw,
                             c("mechanism", "p_post_k", "architecture",
                               "graph_type", "load_level", "congestion"))),
-  tar_target(node_stats_exp6, stat_exp6(bind_rows(node_exp6_results_raw))),
+  tar_target(node_stats_exp6, stat_exp6(bind_rows(node_exp6_results_raw),
+                                        metrics = node_metrics())),
   # Every arm as a point in the posted family's own plane, so the comparison
   # is read at matched congestion rather than at whatever volume each arm
   # happened to admit.
@@ -1266,6 +1269,57 @@ list(
       dir.create("results", showWarnings = FALSE, recursive = TRUE)
       readr::write_csv(node_stats_report, "results/node-stats-report.csv")
       "results/node-stats-report.csv"
+    },
+    format = "file"
+  ),
+
+  # -- the released node-level intervals -------------------------------------
+  # Every bracket a node-level number is reported with is a Student t interval
+  # over the seeds of its cell. One file carries them all, per block, cell and
+  # response, with the n behind each, so a bracket is read off a released file
+  # rather than recomputed. Each block is cut on the cells its own summary
+  # table groups by. The one-at-a-time sensitivity table is one number per
+  # cell, so its rows carry n = 1 and no bounds.
+  tar_target(
+    node_intervals,
+    {
+      rows <- dplyr::bind_rows(
+        node_interval_rows(node_exp1_results_raw,
+                           c("graph_type", "load_level"), block = "exp1"),
+        node_interval_rows(node_exp3_results_raw,
+                           c("policy", "graph_type", "load_level", "leaf_mix"),
+                           block = "exp3"),
+        node_interval_rows(node_exp4_results_raw,
+                           c("architecture", "graph_type", "load_level"),
+                           block = "exp4"),
+        node_interval_rows(node_exp4_overhead_raw,
+                           c("architecture", "enc_overhead_ms", "graph_type",
+                             "load_level"), block = "exp4_overhead"),
+        node_interval_rows(node_exp5_results_raw,
+                           c("architecture", "policy", "graph_type",
+                             "load_level"), block = "exp5"),
+        node_interval_rows(node_exp6_results_raw,
+                           c("mechanism", "p_post_k", "architecture",
+                             "graph_type", "load_level", "congestion"),
+                           block = "exp6"),
+        node_interval_rows(node_exp6_eval_raw,
+                           c("mechanism", "architecture", "graph_type",
+                             "load_level", "congestion"), block = "exp6_tuned"),
+        node_interval_rows(node_exp6_sensitivity,
+                           c("setting", "mechanism", "architecture",
+                             "graph_type", "load_level"),
+                           block = "exp6_sensitivity"),
+        node_interval_rows(node_exp10_results_raw,
+                           c("interface", "graph_type", "leaf_mix"),
+                           block = "exp10"),
+        node_interval_rows(node_exp14_sensitivity, c("parameter", "level"),
+                           "median_reduction", block = "exp14"),
+        node_interval_rows(node_exp9_results_raw,
+                           c("pattern", "architecture", "load_level"),
+                           block = "agentic"))
+      dir.create("results", showWarnings = FALSE, recursive = TRUE)
+      readr::write_csv(rows, "results/node-intervals.csv")
+      "results/node-intervals.csv"
     },
     format = "file"
   ),

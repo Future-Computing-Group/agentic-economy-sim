@@ -1530,6 +1530,53 @@ node_metrics <- function() {
     "price_volatility_cleared")
 }
 
+#' Every response a node interval is released for.
+#'
+#' The contrasted responses and, beside them, the ones a block reports on its
+#' own: how often and how far the greedy pack falls short of the exact one,
+#' the demand a domain slice strands, and the tokens an optimistic interface
+#' over-commits. A block that does not produce one of them simply lacks the
+#' column.
+#'
+#' @return Character vector of column names.
+node_interval_metrics <- function() {
+  c(node_metrics(), "greedy_exact_incidence", "greedy_exact_worst",
+    "stranded_demand", "overcommitment")
+}
+
+#' Student t intervals over the seeds of a node block, one row per response.
+#'
+#' The brackets the node-level numbers are reported with are t intervals at
+#' 95 per cent over the evaluation seeds, so this is the one place they are
+#' computed. A response with no spread in a cell has no interval: its mean is
+#' reported and its bounds are NA, which is what a structural constant looks
+#' like rather than a failed measurement. `n` counts the finite values behind
+#' each row.
+#'
+#' @param df        Per-seed node results (a frame or a list of rows).
+#' @param cell_vars The variables a cell is defined by.
+#' @param metrics   Responses to report, skipping any the frame lacks.
+#' @param block     The block label the rows carry.
+#' @return A tibble: block, cell_vars, cell, metric, mean, lo, hi, n.
+node_interval_rows <- function(df, cell_vars, metrics = node_interval_metrics(),
+                               block = NA_character_) {
+  df        <- bind_rows(df)
+  cell_vars <- intersect(cell_vars, names(df))
+  metrics   <- intersect(metrics, names(df))
+  label <- do.call(paste, c(lapply(cell_vars, function(v) as.character(df[[v]])),
+                            sep = "_"))
+  cells <- split(df, label)
+  bind_rows(lapply(names(cells), function(cl) {
+    bind_rows(lapply(metrics, function(m) {
+      v  <- as.numeric(cells[[cl]][[m]])
+      iv <- .ratio_interval(v)
+      tibble(block = block, cell_vars = paste(cell_vars, collapse = "_"),
+             cell = cl, metric = m, mean = iv$mean, lo = iv$lo, hi = iv$hi,
+             n = sum(is.finite(v)))
+    }))
+  }))
+}
+
 #' A measured table in the shape the machine-written report harvests.
 #'
 #' The report collects frames named `statistics` under a cell, and the
@@ -1849,7 +1896,11 @@ node_exp6_mechanism_grid <- function(n_seeds) {
     return(list(mean = if (length(r) > 0L) mean(r) else NA_real_,
                 lo = NA_real_, hi = NA_real_))
   }
-  ci <- as.numeric(stats::t.test(r)$conf.int)
+  # A spread at rounding level is still no spread: t.test refuses data it
+  # judges essentially constant, and a structural column constant up to the
+  # last bit is a point rather than a failed interval.
+  ci <- tryCatch(as.numeric(stats::t.test(r)$conf.int),
+                 error = function(e) c(NA_real_, NA_real_))
   list(mean = mean(r), lo = ci[[1]], hi = ci[[2]])
 }
 

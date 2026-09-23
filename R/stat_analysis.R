@@ -352,10 +352,13 @@ art_anova <- function(raw_df, formula) {
 #' Statistical summary for Experiment 1 (topology x load).
 #'
 #' @param raw_df Per-seed results from exp1_results_raw.
+#' @param metrics Responses summarised; the default is the per-tier list, and
+#'   the node arms pass node_metrics().
 #' @return A list with stat summaries per load level, plus interaction ART.
-stat_exp1 <- function(raw_df) {
-  metrics <- c("median_latency", "drop_rate", "utilisation",
-               "mean_price_volatility", "welfare", "efficiency")
+stat_exp1 <- function(raw_df,
+                      metrics = c("median_latency", "drop_rate", "utilisation",
+                                  "mean_price_volatility", "welfare",
+                                  "efficiency")) {
 
   # Per load level: topology effect
   by_load <- raw_df %>%
@@ -516,10 +519,12 @@ stat_exp3 <- function(raw_df) {
 #' Statistical summary for Experiment 4 (architecture ablation).
 #'
 #' @param raw_df Per-seed results from exp4_results_raw.
+#' @param metrics Responses summarised; the default is the per-tier list, and
+#'   the node arms pass node_metrics().
 #' @return A list with stat summaries per topology x load, plus interaction.
-stat_exp4 <- function(raw_df) {
-  metrics <- c("median_latency", "drop_rate", "welfare",
-               "mean_price_volatility", "efficiency")
+stat_exp4 <- function(raw_df,
+                      metrics = c("median_latency", "drop_rate", "welfare",
+                                  "mean_price_volatility", "efficiency")) {
 
   by_tl <- raw_df %>%
     group_by(graph_type, load_level) %>%
@@ -824,11 +829,13 @@ compute_synergy <- function(raw_df, metric, ...) {
 #' Statistical summary for Experiment 6 (mechanism ablation).
 #'
 #' @param raw_df Per-seed results from exp6_results_raw.
+#' @param metrics Responses summarised; the default is the per-tier list, and
+#'   the node arms pass node_metrics().
 #' @return A list with stat summaries per topology x load, the interaction, and
 #'   `interaction_dropped`: the arms the interaction could not be fitted on.
-stat_exp6 <- function(raw_df) {
-  metrics <- c("median_latency", "drop_rate", "welfare",
-               "mean_price_volatility", "efficiency")
+stat_exp6 <- function(raw_df,
+                      metrics = c("median_latency", "drop_rate", "welfare",
+                                  "mean_price_volatility", "efficiency")) {
 
   # The posted price at three markups is three arms, not one. The markup travels
   # in the arm label, so each level is its own group; pooling them would test a
