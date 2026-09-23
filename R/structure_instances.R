@@ -514,10 +514,19 @@ polymatroid_certificate <- function(r, leaves = NULL) {
 #'
 #' Arcs are uncapacitated and only nodes carry capacity, so a minimum cut is a
 #' set of service nodes whose removal leaves no leaf of the subset reachable
-#' from a source. The leaf-block region is contained in this one on every
-#' graph, since every token through a node is destined for a leaf that node
-#' reaches; where the two differ, the leaf-block region is discarding mixes the
-#' node capacities would carry.
+#' from a source.
+#'
+#' Which counting this bound belongs to is what a reading of it turns on. A
+#' flow sends each token down ONE path, so a node off that path is not loaded
+#' and parallel nodes serving the same leaf add their capacities: this is a
+#' ROUTING count. The study counts fork-join instead -- a token loads every
+#' ancestor of its leaf, because the whole recipe has to run -- and under that
+#' counting the leaf-block region is the feasible region, not a discard from a
+#' larger one. The two agree wherever no leaf has two ancestors on parallel
+#' required paths and separate exactly where it does: on the fan every leaf
+#' sits under all three edge nodes at fifty tokens each, so its feasible total
+#' is fifty where this bound reads one hundred. Both the tree and the crossing
+#' instance sit at the ratio of one.
 #'
 #' The cut travels with the value because it names WHICH nodes bind, which is
 #' what a capacity reading is read against.
