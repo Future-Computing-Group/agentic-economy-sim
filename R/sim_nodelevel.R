@@ -709,6 +709,29 @@ node_round_tasks <- function(env, agents, t, seed, deadlines) {
   tasks
 }
 
+#' The order the round's tasks arrive in.
+#'
+#' The generator emits a round's tasks agent by agent in id order, so the row
+#' order is an artefact of the generator rather than a model of arrival. The
+#' arrival order is a uniform permutation drawn from a stream derived from the
+#' round's own seed (`seed * 1009 + t`, the seed `node_round_tasks()` draws
+#' the demand from) plus a fixed offset, so it is deterministic per seed and
+#' round, and it is drawn with the global stream saved and restored, so the
+#' demand, clearing and execution draws of the run do not move.
+#'
+#' @param n    Tasks in the round.
+#' @param seed The run's seed.
+#' @param t    The round.
+#' @return Integer vector: each row's position in the arrival order.
+node_arrival_order <- function(n, seed, t) {
+  had  <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  if (had) old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+  on.exit(if (had) assign(".Random.seed", old, envir = globalenv())
+          else rm(".Random.seed", envir = globalenv()))
+  set.seed(seed * 1009L + t + 500009L)
+  sample.int(n)
+}
+
 #' The two per-task quantities a bid is formed from.
 #'
 #' Both are keyed on the task's own leaf and both are read from the PREVIOUS
@@ -1163,7 +1186,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
         # rank the participants it has already priced.
         allocation   <- posted_price_allocate(
           tasks_all, env, scores, p_task,
-          order = if (mechanism == "posted_price_fcfs") "arrival" else "value")
+          order = if (mechanism == "posted_price_fcfs") "arrival" else "value",
+          arrival = node_arrival_order(n_gen, seed, t))
         # The price is what agents face whether or not they take it, so it is
         # recorded every round, as the market arm records what it cleared at.
         unitCostV[t] <- if (n_gen == 0L) NA_real_ else mean(p_task)

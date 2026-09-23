@@ -190,3 +190,37 @@ test_that("the mechanism statistics keep each arrival-order level its own arm", 
   groups <- unique(s$per_topo_load[[1]]$ci$mechanism)
   expect_true(all(c("posted_price_fcfs_k1", "posted_price_fcfs_k2") %in% groups))
 })
+
+
+# ---- arrival order drawn per round -----------------------------------------
+
+test_that("the arrival order is a seeded permutation of the round", {
+  p <- node_arrival_order(12L, seed = 3L, t = 5L)
+  expect_setequal(p, seq_len(12L))
+  expect_identical(p, node_arrival_order(12L, seed = 3L, t = 5L))
+  expect_false(identical(p, node_arrival_order(12L, seed = 3L, t = 6L)))
+  expect_false(identical(p, node_arrival_order(12L, seed = 4L, t = 5L)))
+  # Pinned: the order a fixed seed and round draws.
+  expect_identical(p, c(12L, 1L, 3L, 8L, 10L, 6L, 7L, 2L, 5L, 4L, 11L, 9L))
+  expect_length(node_arrival_order(0L, seed = 1L, t = 1L), 0L)
+})
+
+test_that("drawing the arrival order leaves the round's own stream untouched", {
+  set.seed(42); before <- .Random.seed
+  node_arrival_order(30L, seed = 1L, t = 1L)
+  expect_identical(.Random.seed, before)
+})
+
+test_that("a given arrival order admits its prefix when capacity binds", {
+  env   <- fcfs_env(scale = 0.05)
+  tasks <- fcfs_tasks(env)
+  ev    <- fcfs_ev(tasks)
+  p     <- min(ev) / 2
+  pos   <- node_arrival_order(nrow(tasks), seed = 1L, t = 1L)
+  alloc <- posted_price_allocate(tasks, env, ev, p, order = "arrival",
+                                 arrival = pos)
+  expect_lt(nrow(alloc), nrow(tasks))
+  # The tasks that arrived first, in the order they arrived.
+  expect_equal(alloc$task_id,
+               head(tasks$task_id[order(pos)], nrow(alloc)))
+})
