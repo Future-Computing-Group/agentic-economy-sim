@@ -3638,3 +3638,119 @@ node_exp7b_summary <- function(rows, by = c("graph_type", "operating_point",
                 all(certificate) else NA,
               .groups = "drop")
 }
+
+
+# ===========================================================================
+# A posted price that could not be set for the cell it runs in
+# ===========================================================================
+
+#' The knob each mechanism's tuning seeds chose, per cell.
+#'
+#' The rule `node_eval_grid()` applies: the highest mean welfare over the
+#' tuning seeds, the smallest knob on a tie.
+#'
+#' @param tuning_raw Per-seed tuning rows.
+#' @param cell_vars  The variables a knob is chosen inside.
+#' @param knob       The knob column.
+#' @return One row per cell and mechanism, carrying the chosen knob.
+.tuned_knob <- function(tuning_raw, cell_vars, knob) {
+  tuning_raw %>%
+    group_by(across(all_of(c(cell_vars, "mechanism", knob)))) %>%
+    summarise(.w = mean(welfare, na.rm = TRUE), .groups = "drop") %>%
+    group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
+    slice_max(.w, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    select(-".w")
+}
+
+#' The posted arms at a level committed before the cell was known.
+#'
+#' Analysis of existing runs; nothing is run here. The tuned comparison picks
+#' each posted level inside the exact cell (instance, load, architecture,
+#' congestion) it is evaluated in, which is a level that can be set in
+#' advance. Two levels that could not be are read from the tuning runs: the
+#' level tuned at the OTHER load of the same instance, architecture and
+#' congestion level (`other_load`), and one level per instance, load and
+#' congestion level pooled over the architectures (`pooled_architecture`).
+#' Each is read off the frontier grid at that level in this cell, and
+#' contrasted seed by seed with the market arm the frontier ran on the same
+#' seeds (a paired Student t 95% interval on the welfare difference).
+#'
+#' The frontier runs the market at its default reserve markup only, so the
+#' comparator is the tuned market exactly where the tuning chose markup 1;
+#' `market_tuned_markup` and `market_is_tuned` say which cells those are. A
+#' mis-set level the frontier grid never ran (the two tuning levels below
+#' marginal cost) has no rows to read and is reported missing, not
+#' interpolated.
+#'
+#' Beside it, where the evaluation rows are given, the contrast against the
+#' tuned market itself: the mis-set posted arm on the frontier's seeds
+#' against the tuned market on its held-out evaluation seeds, which share no
+#' seed, so the interval is Welch's rather than paired.
+#'
+#' @param tuning_raw   Per-seed rows of the tuning grid.
+#' @param frontier_raw Per-seed rows of the mechanism (frontier) grid.
+#' @param arms         The posted arms to read.
+#' @param eval_raw     Per-seed rows of the tuned comparison, or NULL.
+#' @return One row per cell, arm and variant.
+node_misset_posted <- function(tuning_raw, frontier_raw,
+                               arms = c("posted_price_fcfs",
+                                        "posted_price_edf"),
+                               eval_raw = NULL) {
+  cells <- c("graph_type", "load_level", "architecture", "congestion")
+  tr    <- dplyr::filter(tuning_raw, .data$mechanism %in% arms)
+  here_lv <- .tuned_knob(tr, cells, "p_post_k") %>%
+    rename(level_tuned_here = "p_post_k")
+  other <- here_lv %>%
+    mutate(load_level = ifelse(load_level == "medium", "high", "medium")) %>%
+    rename(level_used = "level_tuned_here")
+  pooled <- .tuned_knob(tr, setdiff(cells, "architecture"), "p_post_k") %>%
+    rename(level_used = "p_post_k")
+  plan <- bind_rows(
+    left_join(here_lv, other, by = c(cells, "mechanism")) %>%
+      mutate(variant = "other_load"),
+    left_join(here_lv, pooled,
+              by = c(setdiff(cells, "architecture"), "mechanism")) %>%
+      mutate(variant = "pooled_architecture"))
+
+  market_knob <- .tuned_knob(dplyr::filter(tuning_raw, .data$mechanism == "market"),
+                             cells, "reserve_markup") %>%
+    select(-"mechanism") %>%
+    rename(market_tuned_markup = "reserve_markup")
+  market <- frontier_raw %>%
+    dplyr::filter(.data$mechanism == "market") %>%
+    select(all_of(c(cells, "seed")), market_welfare = "welfare")
+
+  read <- bind_rows(lapply(seq_len(nrow(plan)), function(i) {
+    p <- plan[i, ]
+    f <- frontier_raw %>%
+      semi_join(p[cells], by = cells) %>%
+      dplyr::filter(.data$mechanism == p$mechanism,
+                    abs(.data$p_post_k - p$level_used) < 1e-9) %>%
+      select("seed", "welfare")
+    m <- semi_join(market, p[cells], by = cells)
+    d <- inner_join(f, m, by = "seed")
+    d <- d$welfare - d$market_welfare
+    iv <- .ratio_interval(d)
+    tuned <- if (is.null(eval_raw)) numeric(0) else
+      semi_join(dplyr::filter(eval_raw, .data$mechanism == "market"), p[cells],
+                by = cells)$welfare
+    wt <- if (sum(is.finite(f$welfare)) >= 2L && sum(is.finite(tuned)) >= 2L)
+      as.numeric(stats::t.test(f$welfare, tuned)$conf.int) else c(NA_real_, NA_real_)
+    tibble(level_on_frontier = nrow(f) > 0L,
+           n              = sum(is.finite(d)),
+           welfare_misset = if (nrow(f) > 0L) mean(f$welfare) else NA_real_,
+           welfare_market = mean(m$market_welfare),
+           diff_mean      = if (length(d) > 0L) iv$mean else NA_real_,
+           diff_lo        = iv$lo,
+           diff_hi        = iv$hi,
+           n_tuned_market  = sum(is.finite(tuned)),
+           diff_tuned_mean = if (nrow(f) > 0L && length(tuned) > 0L)
+             mean(f$welfare) - mean(tuned) else NA_real_,
+           diff_tuned_lo   = wt[[1]],
+           diff_tuned_hi   = wt[[2]])
+  }))
+  bind_cols(plan, read) %>%
+    left_join(market_knob, by = cells) %>%
+    mutate(market_is_tuned = abs(market_tuned_markup - 1) < 1e-9)
+}

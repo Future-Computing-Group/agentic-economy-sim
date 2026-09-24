@@ -949,6 +949,15 @@ list(
   # beside a chosen knob was flat is a property of the frame the knob was
   # chosen on, and it is what separates a knob the grid limited from one the
   # tie broke inside a plateau.
+  # A posted level that could not be set for the cell it runs in, read from
+  # the runs already made: the level tuned at the other load, and one level
+  # per instance pooled over the architectures, each read off the frontier
+  # grid in this cell and paired by seed with the frontier's market arm. No
+  # new branches.
+  tar_target(node_exp6_misset_posted,
+             node_misset_posted(bind_rows(node_exp6_tuning_raw),
+                                bind_rows(node_exp6_results_raw),
+                                eval_raw = bind_rows(node_exp6_eval_raw))),
   tar_target(node_exp6_tuned,
              node_tuned_table(bind_rows(node_exp6_eval_raw),
                               bind_rows(node_exp6_tuning_raw))),
