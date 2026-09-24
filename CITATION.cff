@@ -4,6 +4,10 @@ title: "Simulation code for \"Agentic Service Markets Across the Computing Conti
 type: software
 version: v2.1.0
 doi: 10.5281/zenodo.21041130
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22876728
+    description: "Version DOI of v2.1.0"
 license: MIT
 repository-code: "https://github.com/Future-Computing-Group/agentic-economy-sim"
 keywords:
