@@ -408,8 +408,37 @@ node_k_c <- function(env) {
 # regions. The enforcement point needs no kernel code: a leaf node's leaf block
 # is the singleton {l}, so x_l <= u_l is already a coordinate constraint of the
 # region the packer and the tatonnement both enforce against the capacity
-# table. Per-agent-class caps are outside the preservation result as stated and
-# are not built.
+# table. Trust and locality are such caps. The role determinant is not: it
+# caps an agent CLASS, which no coordinate bound on the leaves can express, so
+# it is enforced at admission by node_role_admission() on the agent's own
+# role. A class cap is outside the preservation result as stated, and the role
+# level is reported as that.
+
+#' The role-based access control determinant, on the agent's own role.
+#'
+#' Agents of the capped role keep at most `alpha_role` of each leaf's token
+#' capacity; agents of any other role are not bound. It is applied to what the
+#' mechanism admitted, before execution, keeping the capped class's tokens in
+#' the order the mechanism admitted them, so it is an admission gate
+#' downstream of the price rather than a constraint the price clears against.
+#'
+#' @param allocation The mechanism's admitted tasks, carrying `agent_id` and
+#'   `recipe`.
+#' @param agents     The round's agents, carrying `role`.
+#' @param env        The environment the round cleared over.
+#' @param role       The role class the cap applies to.
+#' @param alpha_role Share of each leaf's token capacity that class keeps.
+#' @return The admitted tasks, the capped class's excess removed.
+node_role_admission <- function(allocation, agents, env, role = "consumer",
+                                alpha_role = 0.5) {
+  if (nrow(allocation) == 0L) return(allocation)
+  L      <- rownames(env$anc)
+  quota  <- floor(alpha_role * node_token_capacity(env)[L])
+  capped <- agents$role[match(allocation$agent_id, agents$agent_id)] %in% role
+  leaf   <- as.character(allocation$recipe)
+  k      <- stats::ave(as.numeric(capped), leaf, FUN = cumsum)
+  allocation[!capped | k <= quota[leaf], , drop = FALSE]
+}
 
 #' Apply coordinate-wise caps to an environment's leaves.
 #'
@@ -488,20 +517,18 @@ update_provider_trust <- function(agents, results_t, leaf_of, providers,
 #'
 #' @param env       Environment list from node_env(), UNCAPPED.
 #' @param policy    One of "none", "trust", "locality", "role", "residency",
-#'                  "residency_sliced". The two residency levels are not
-#'                  coordinate caps and return NULL here; they are built by
-#'                  node_residency_coupling and node_domain_slices.
+#'                  "residency_sliced". The two residency levels and the role
+#'                  level are not coordinate caps and return NULL here; the
+#'                  residency levels are built by node_residency_coupling and
+#'                  node_domain_slices, and the role class is enforced at
+#'                  admission by node_role_admission.
 #' @param agents    Agent tibble, for the trust determinant.
 #' @param providers Named integer vector mapping leaf to agent id.
 #' @param tau       Trust threshold below which a leaf is closed.
-#' @param alpha_role Share of capacity the restricted role class keeps.
 #' @param permitted Leaves inside the permitted jurisdiction.
-#' @param restricted Leaves in the restricted role class.
 #' @return Named numeric vector of token caps per leaf, or NULL.
 node_policy_caps <- function(policy, env, agents = NULL, providers = NULL,
-                             tau = 0.75, alpha_role = 0.5,
-                             permitted = c("l1", "l2"),
-                             restricted = c("l2", "l4")) {
+                             tau = 0.75, permitted = c("l1", "l2")) {
   L    <- rownames(env$anc)
   Ctok <- node_token_capacity(env)[L]
   switch(policy,
@@ -513,9 +540,8 @@ node_policy_caps <- function(policy, env, agents = NULL, providers = NULL,
     trust    = setNames(ifelse(
       agents$trust[match(providers[L], agents$agent_id)] >= tau, Ctok, 0), L),
     locality = setNames(ifelse(L %in% permitted, Ctok, 0), L),
-    # A partial cap, which is what makes the arm a monotone dose rather than a
-    # switch, and which never repairs a crossing region.
-    role     = setNames(ifelse(L %in% restricted, floor(alpha_role * Ctok), Ctok), L),
+    # A class cap rather than a leaf cap: enforced at admission.
+    role     = NULL,
     stop("unknown policy: ", policy))
 }
 
@@ -1235,6 +1261,9 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       unitCostV[t] <- cleared$clearing$unit_cost
       clearedCostV[t] <- cleared$clearing$unit_cost_cleared
       residV[t]    <- cleared$clearing$resid_excess
+    }
+    if (policy == "role") {
+      allocation <- node_role_admission(allocation, agents, env)
     }
     priceCvV[t] <- cross_leaf_price_cv(prices, anc)
 

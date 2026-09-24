@@ -74,12 +74,9 @@ test_that("the three determinants cap the leaves each names and no others", {
   expect_equal(unname(loc[c("l3", "l4")]), c(0, 0))
   expect_equal(unname(loc[c("l1", "l2")]), unname(Ctok[c("l1", "l2")]))
 
-  # Role: a PARTIAL cap on the restricted class, which is what makes the arm a
-  # monotone dose rather than a switch.
-  role <- node_policy_caps("role", env, agents, prov)
-  expect_equal(unname(role[c("l2", "l4")]),
-               unname(floor(0.5 * Ctok[c("l2", "l4")])))
-  expect_equal(unname(role[c("l1", "l3")]), unname(Ctok[c("l1", "l3")]))
+  # Role: a cap on an agent CLASS, so it is no coordinate cap on the leaves;
+  # it binds at admission (node_role_admission) and reads the agent's role.
+  expect_null(node_policy_caps("role", env, agents, prov))
 
   # Trust: keyed on the PROVIDER behind the leaf, read from the round before.
   agents$trust[agents$agent_id == prov[["l3"]]] <- 0.5
@@ -281,9 +278,13 @@ test_that("every policy level runs and reports what it is instrumented for", {
   expect_lt(loc$clearing_fraction, none$clearing_fraction)
   expect_true(loc$certificate_ok)
 
-  # A partial cap on two leaves is a smaller dose than closing two outright.
+  # A cap on one agent class at half of each leaf's capacity never admits
+  # more than no cap, and less than closing two leaves outright. At this
+  # operating point the consumer class never reaches its quota, so the two
+  # are equal: the level is slack here, and the unit tests below show it
+  # binds where the class does reach it.
   role <- run("role")
-  expect_lt(role$clearing_fraction, none$clearing_fraction)
+  expect_lte(role$clearing_fraction, none$clearing_fraction)
   expect_gt(role$clearing_fraction, loc$clearing_fraction)
 
   trust <- run("trust")
@@ -296,4 +297,49 @@ test_that("every policy level runs and reports what it is instrumented for", {
   sliced <- run("residency_sliced")
   expect_true(sliced$certificate_ok)
   expect_gt(sliced$stranded_demand, 0)
+})
+
+
+# ---- the role class reads the agent's role ---------------------------------
+
+role_fixture <- function() {
+  env    <- gov_env("tree")
+  agents <- tibble::tibble(agent_id = 1:2, role = c("consumer", "provider"),
+                           trust = 0.8)
+  leaf   <- rownames(env$anc)[[1]]
+  quota  <- floor(0.5 * node_token_capacity(env)[[leaf]])
+  n      <- quota + 5L
+  alloc  <- tibble::tibble(
+    task_id = sprintf("t%03d", seq_len(2L * n)),
+    agent_id = rep(1:2, each = n), deadline = 1000, value_base = 1.5,
+    recipe = leaf)
+  list(env = env, agents = agents, alloc = alloc, quota = quota, n = n)
+}
+
+test_that("an agent of the capped role is bound at the fraction the level states", {
+  f <- role_fixture()
+  kept <- node_role_admission(f$alloc, f$agents, f$env)
+  expect_equal(sum(kept$agent_id == 1L), f$quota)
+  # The ones kept are the first the mechanism admitted, in its order.
+  expect_equal(kept$task_id[kept$agent_id == 1L],
+               head(f$alloc$task_id[f$alloc$agent_id == 1L], f$quota))
+})
+
+test_that("an agent of the other role is not bound", {
+  f <- role_fixture()
+  kept <- node_role_admission(f$alloc, f$agents, f$env)
+  expect_equal(sum(kept$agent_id == 2L), f$n)
+  # Naming the other role as the capped one swaps who is bound.
+  swapped <- node_role_admission(f$alloc, f$agents, f$env, role = "provider")
+  expect_equal(sum(swapped$agent_id == 1L), f$n)
+  expect_equal(sum(swapped$agent_id == 2L), f$quota)
+})
+
+test_that("the role level reads the role, so a population with no capped agent is uncapped", {
+  run <- function(pol) node_run_single("tree", "high", N = 90L, seed = 1L,
+                                       n_rounds = 8L, policy = pol)
+  expect_lte(run("role")$tokens_admitted, run("none")$tokens_admitted)
+  f <- role_fixture()
+  f$agents$role <- "provider"
+  expect_identical(node_role_admission(f$alloc, f$agents, f$env), f$alloc)
 })
