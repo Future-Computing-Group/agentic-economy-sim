@@ -10,7 +10,12 @@ _targets/
 
 # Generated figures and results (regenerate with pipeline)
 fig/
-results/
+results/*
+# The congestion calibration is shipped: the node blocks read their calibrated
+# level from it.
+!results/calibration/
+results/calibration/*
+!results/calibration/node-congestion-calibration.csv
 
 # Python bytecode (emulation harness tests)
 __pycache__/

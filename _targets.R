@@ -75,6 +75,11 @@ lambda_l       <- 0.005                     # per-ms latency decay; delta(T) = e
 integ_efficiency_sp  <- 1.0                 # integrator efficiency factor for SP topology
 integ_efficiency_ent <- 1.0                 # integrator efficiency factor for entangled topology
 integ_eta      <- price_eta                 # slice price step; common to every arm (R/sim_market.R)
+# The latency elasticity the emulated testbed measured over the medium-to-high
+# step (emul_compare() on the container replay). It is the calibration's
+# target: the node grid's congestion level is the swept pair whose own
+# elasticity over the same step is closest to it.
+testbed_latency_elasticity <- 0.2597
 
 # IEEE TSC figure dimensions (single-column ~3.5 in, 600 dpi)
 fig_width  <- 3.5
@@ -1233,6 +1238,36 @@ list(
     ),
     pattern   = map(exp14_sweep_cells),
     iteration = "vector"
+  ),
+
+  # -- the congestion calibration --------------------------------------------
+  # The sweep that selects the calibrated level, written where the level is
+  # read from. A regenerated sweep that selected a different pair would move
+  # every node block that runs at the default without a code change, so the
+  # file target refuses it rather than writing it.
+  tar_target(node_calibration_cells, node_calibration_grid()),
+  tar_target(
+    node_calibration_rows,
+    node_calibration_row(node_calibration_cells$exec_clamp,
+                         node_calibration_cells$queue_coef,
+                         target_elasticity = testbed_latency_elasticity),
+    pattern   = map(node_calibration_cells),
+    iteration = "vector"
+  ),
+  tar_target(
+    node_calibration_file,
+    {
+      rows <- dplyr::bind_rows(node_calibration_rows)
+      best <- dplyr::slice(rows, which.min(rows$gap))
+      shipped <- node_calibrated_congestion()
+      stopifnot("the regenerated calibration selects a different pair" =
+                  isTRUE(all.equal(c(best$exec_clamp, best$queue_coef),
+                                   c(shipped$exec_clamp, shipped$queue_coef))))
+      dir.create("results/calibration", showWarnings = FALSE, recursive = TRUE)
+      readr::write_csv(rows, "results/calibration/node-congestion-calibration.csv")
+      "results/calibration/node-congestion-calibration.csv"
+    },
+    format = "file"
   ),
 
   # -- the machine-written statistics dump for the node arms -----------------

@@ -2509,12 +2509,80 @@ node_sensitivity_settings <- function() {
     vary("alpha", 200),
     # Measured against the testbed rather than chosen: the queue term whose
     # elasticity of median latency to offered load lands on what real
-    # inference produced, on this instance at these two loads. The sweep and
-    # its fit are in the calibration table in the results directory. The
-    # branch of the sweep that reaches the same elasticity by saturating both
-    # loads against the per-node queue ceiling is not this one.
-    tibble(setting = "calibrated", lambda_l = node_lambda_l(),
-           exec_clamp = 0.95, alpha = 50, queue_coef = 0.75))
+    # inference produced, on this instance at these two loads. It is read
+    # from the calibration sweep the pipeline writes to the results directory
+    # (node_calibration_rows), the pair with the smallest gap. The branch of
+    # the sweep that reaches the same elasticity by saturating both loads
+    # against the per-node queue ceiling is not this one: its gap is larger.
+    {
+      cal <- node_calibrated_congestion()
+      tibble(setting = "calibrated", lambda_l = node_lambda_l(),
+             exec_clamp = cal$exec_clamp, alpha = 50,
+             queue_coef = cal$queue_coef)
+    })
+}
+
+#' Where the congestion calibration sweep is written.
+#'
+#' @return The path of the calibration table, under the project root.
+node_calibration_path <- function() {
+  here::here("results", "calibration", "node-congestion-calibration.csv")
+}
+
+#' The calibrated congestion level, read from the calibration sweep.
+#'
+#' @param path The calibration table.
+#' @return A list of `exec_clamp` and `queue_coef`: the swept pair whose
+#'   elasticity is closest to the testbed's.
+node_calibrated_congestion <- function(path = node_calibration_path()) {
+  cal <- utils::read.csv(path)
+  stopifnot("the calibration table carries no gap column" = "gap" %in% names(cal))
+  best <- cal[which.min(cal$gap), ]
+  list(exec_clamp = best$exec_clamp, queue_coef = best$queue_coef)
+}
+
+#' The (clamp, coefficient) pairs the calibration sweeps.
+#'
+#' Fine around the fitted coefficient at the reported clamp, and coarse over
+#' the two steeper clamps, where the elasticity overshoots the testbed's at
+#' every coefficient below the saturating branch.
+#'
+#' @return A tibble of `exec_clamp` and `queue_coef`.
+node_calibration_grid <- function() {
+  coarse <- c(0.25, 0.5, 1, 2, 4, 8, 16, 24, 32, 48)
+  bind_rows(
+    tibble(exec_clamp = 0.95,
+           queue_coef = c(0.25, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, coarse[-(1:2)])),
+    tidyr::expand_grid(exec_clamp = c(0.99, 0.995), queue_coef = coarse))
+}
+
+#' One row of the calibration sweep.
+#'
+#' The node grid's own medium-to-high step on the tree instance, the
+#' uncontracted market at its evaluation population, over three seeds of ten
+#' rounds: the latency elasticity `node_load_elasticity()` reads, and its gap
+#' to the elasticity the emulated testbed measured over the same step.
+#'
+#' @param exec_clamp,queue_coef The congestion pair.
+#' @param target_elasticity     The testbed's latency elasticity.
+#' @param seeds,n_rounds        The runs behind the row.
+#' @return A one-row tibble in the calibration table's shape.
+node_calibration_row <- function(exec_clamp, queue_coef, target_elasticity,
+                                 seeds = 1:3, n_rounds = 10L) {
+  run <- function(load) bind_rows(lapply(seeds, function(s)
+    node_run_single("tree", load, N = node_agents()[["tree"]], seed = s,
+                    n_rounds = n_rounds, exec_clamp = exec_clamp,
+                    queue_coef = queue_coef)))
+  lo <- run("medium"); hi <- run("high")
+  offered <- function(r) mean(r$tokens_admitted / r$clearing_fraction, na.rm = TRUE)
+  e <- node_load_elasticity(lo, hi)
+  tibble(exec_clamp = exec_clamp, queue_coef = queue_coef,
+         median_latency_medium = mean(lo$median_latency, na.rm = TRUE),
+         median_latency_high   = mean(hi$median_latency, na.rm = TRUE),
+         offered_medium = offered(lo), offered_high = offered(hi),
+         elasticity = e, n_seeds = length(seeds), n_rounds = as.integer(n_rounds),
+         target_elasticity = target_elasticity,
+         gap = abs(e - target_elasticity))
 }
 
 #' The grid the sensitivity sweep branches over.
