@@ -50,11 +50,14 @@ node_policy_names <- c("none"             = "none",
 # The zero cap, where governance is a two-level factor.
 node_cap2_names <- c("none" = "no cap", "locality" = "zero cap")
 
-# The four ablation levels, then the two tuned arms.
+# The four ablation levels, then the tuned arms. The deadline-priority posted
+# price is tuned too but not drawn: it tracks the arrival-order arm to within
+# the plotted resolution in every cell, so it would only overprint it.
 node_mech_names <- c("random" = "random", "edf" = "EDF",
                      "greedy_ev" = "value-greedy", "market" = "market")
-node_tuned_names <- c("posted_price" = "posted price (tuned)",
-                      "market"       = "market (tuned)")
+node_tuned_names <- c("posted_price"      = "posted price, value-ranked (tuned)",
+                      "posted_price_fcfs" = "posted price, arrival-order (tuned)",
+                      "market"            = "market (tuned)")
 
 # --- scales, re-keyed from the per-tier palettes ---------------------------
 #
@@ -74,9 +77,11 @@ shape_instance_node <- function()
 
 # Six nominal levels for the mechanism figure: the four-level muted palette,
 # extended in the same family, with the redundant grayscale cues to match.
-palette_arm_node  <- function() c(palette_qual_tufte, "#D65F5F", "#8C613C")
-linetype_arm_node <- function() c(linetype_qual_tufte, "twodash", "dashed")
-shape_arm_node    <- function() 15:20
+palette_arm_node  <- function() c(palette_qual_tufte, "#D65F5F", "#DC7EC0",
+                                  "#8C613C")
+linetype_arm_node <- function() c(linetype_qual_tufte, "twodash", "42",
+                                  "dashed")
+shape_arm_node    <- function() c(15:19, 8, 20)
 
 #' Label a run frame's instance column, in T / S / X order.
 #'
@@ -355,10 +360,11 @@ make_node_exp5_tufte <- function(raw_df) {
 #' Node-level Exp.6 figure: the ablation levels and the tuned arms.
 #'
 #' The reported congestion level is the calibrated one, under the uncontracted
-#' architecture. The ascending arm is retired and appears nowhere. The two
-#' tuned arms come from the tuned table, whose knob was chosen on seeds
-#' disjoint from the ablation's; that table carries no drop rate, so those two
-#' arms have no point in the drop panel.
+#' architecture. The ascending arm is retired and appears nowhere. The tuned
+#' arms (the value-ranked and arrival-order posted prices and the market) come
+#' from the tuned table, whose knob was chosen on seeds disjoint from the
+#' ablation's; that table carries no drop rate, so those arms have no point in
+#' the drop panel.
 #'
 #' @param raw_df   Per-seed rows from node_exp6_results_raw.
 #' @param tuned_df One tuned row per cell and mechanism, node_exp6_tuned.
@@ -409,8 +415,10 @@ make_node_exp6_tufte <- function(raw_df, tuned_df) {
       theme = ggplot2::theme(
         plot.caption = ggplot2::element_text(size = 6, colour = "grey35",
                                              hjust = 0)))
+  # Four rows, so the seven arms fall in two columns: the tuned labels are too
+  # long for a third column at the column width the figure is printed at.
   fig & ggplot2::theme(legend.position = "bottom") &
-    ggplot2::guides(colour   = ggplot2::guide_legend(nrow = 3),
-                    shape    = ggplot2::guide_legend(nrow = 3),
-                    linetype = ggplot2::guide_legend(nrow = 3))
+    ggplot2::guides(colour   = ggplot2::guide_legend(nrow = 4),
+                    shape    = ggplot2::guide_legend(nrow = 4),
+                    linetype = ggplot2::guide_legend(nrow = 4))
 }

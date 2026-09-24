@@ -61,7 +61,8 @@ node_exp6_tuned_stub <- function() {
     load_level   = c("medium", "high"),
     architecture = c("naive", "hybrid_noema"),
     congestion   = c("baseline", "calibrated"),
-    mechanism    = c("greedy_ev", "k8s", "market", "market_cc", "posted_price")
+    mechanism    = c("greedy_ev", "k8s", "market", "market_cc", "posted_price",
+                     "posted_price_fcfs", "posted_price_edf")
   ) %>%
     dplyr::mutate(welfare = 55, alloc_ratio_true = 0.97, median_latency = 95,
                   tokens_admitted = 88)
@@ -173,7 +174,24 @@ test_that("the mechanism figure plots no ascending arm", {
   arms <- unique(unlist(lapply(patch_plots(p),
                                function(q) as.character(q$data$arm))))
   expect_setequal(arms, c("random", "EDF", "value-greedy", "market",
-                          "posted price (tuned)", "market (tuned)"))
+                          "posted price, value-ranked (tuned)",
+                          "posted price, arrival-order (tuned)",
+                          "market (tuned)"))
+})
+
+test_that("the tuned label map names every tuned posted arm but the deadline one", {
+  # The deadline-priority arm tracks the arrival-order arm to within the
+  # plotted resolution, so it is left off rather than overprinted; the caption
+  # says so.
+  drawn <- setdiff(.posted_knob_arms(), "posted_price_edf")
+  expect_true(all(c(drawn, "market") %in% names(node_tuned_names)))
+  expect_false("posted_price_edf" %in% names(node_tuned_names))
+  # Each drawn arm has its own colour, shape and line type.
+  arms <- c(unname(node_mech_names), unname(node_tuned_names))
+  n <- length(arms)
+  expect_gte(length(unique(palette_arm_node())), n)
+  expect_gte(length(unique(shape_arm_node())), n)
+  expect_gte(length(unique(linetype_arm_node())), n)
 })
 
 test_that("the mechanism figure reports the calibrated level alone", {
