@@ -1358,7 +1358,15 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       if (routable > 0) shapeV[t] <- max(0, 1 - lb_tokens / routable)
     }
 
-    ms <- market_update_from_results(ms, util_scalar, results_t, lr = success_lr)
+    if (sliced) {
+      eu_ids <- tasks_all$task_id[as.character(tasks_all$recipe) %in% eu_leaves]
+      up     <- node_slice_success_update(ms, ms_ne, util_scalar, results_t,
+                                          eu_ids, lr = success_lr)
+      ms     <- up$eu
+      ms_ne  <- up$non_eu
+    } else {
+      ms <- market_update_from_results(ms, util_scalar, results_t, lr = success_lr)
+    }
   }
 
   below <- ratioV < 1 - 1e-9
@@ -1451,6 +1459,29 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     stranded_demand            = if (all(is.na(strandV))) NA_real_
                                  else mean(strandV, na.rm = TRUE)
   )
+}
+
+
+#' The success-model update of the two domain slices.
+#'
+#' The slices are two markets that clear against two states, so each state's
+#' success model learns from the tasks its own market cleared, exactly as the
+#' single market's model learns from its own round. The utilisation signal is
+#' the round's, which is what the single market's update reads too.
+#'
+#' @param ms,ms_ne  The EU and non-EU market states.
+#' @param util      The round's utilisation signal.
+#' @param results_t The round's execution results.
+#' @param eu_ids    Task ids of the EU slice's tasks.
+#' @param lr        Learning rate.
+#' @return A list of the updated `eu` and `non_eu` states.
+node_slice_success_update <- function(ms, ms_ne, util, results_t, eu_ids,
+                                      lr = 0.3) {
+  in_eu <- results_t$task_id %in% eu_ids
+  list(eu     = market_update_from_results(ms, util, results_t[in_eu, ],
+                                           lr = lr),
+       non_eu = market_update_from_results(ms_ne, util, results_t[!in_eu, ],
+                                           lr = lr))
 }
 
 
