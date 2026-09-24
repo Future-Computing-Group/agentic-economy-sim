@@ -773,8 +773,12 @@ node_arrival_order <- function(n, seed, t) {
 #' @return A list of `util_hat` and `base_latency`, one entry per task.
 node_bid_inputs <- function(env, tasks, prev_util) {
   lab <- as.character(tasks$recipe)
+  base <- base_latency_per_leaf(env)[lab]
+  # The translation overhead a task pays by crossing the integrator is part of
+  # the latency it expects, so the bid sees it where the execution charges it.
+  if (!is.null(env$enc_overhead_leaf)) base <- base + env$enc_overhead_leaf[lab]
   list(util_hat     = unname(leaf_util_hat(prev_util, env$anc)[lab]),
-       base_latency = unname(base_latency_per_leaf(env)[lab]))
+       base_latency = unname(base))
 }
 
 #' The execution model's own queue delay on each leaf's path.
@@ -1004,9 +1008,13 @@ node_exact_pair <- function(env, tasks, ev) {
 #' @param enc_overhead_ms  Additive protocol-translation latency charged on
 #'                         the integrator's path, the node-substrate
 #'                         counterpart of the per-tier encapsulation knob. It
-#'                         is paid by the tasks that cross the interface, so
-#'                         it reaches the contracted architectures only and is
-#'                         identically zero where the interface is off.
+#'                         is paid by the tasks that cross the interface, the
+#'                         ones whose leaf the contracted cluster exports
+#'                         (`node_exported_leaves()`: l1, l2 and l3 on T and X,
+#'                         where l4 hangs off e3 outside the cluster; all four
+#'                         on S), in execution and in the bid-time latency the
+#'                         agents value their tasks at. It is identically zero
+#'                         where the interface is off.
 #' @return A single-row tibble of summary metrics.
 node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                            "agentic"),
@@ -1050,11 +1058,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                          c("off", "inner", "maxflow"))
   beta      <- arch$beta
   # The protocol translation is a latency on the path a task takes THROUGH the
-  # integrator, so what charges it is the interface being on and not the arm's
-  # name: an uncontracted arm has no integrator to translate at. The two
+  # integrator, so it is paid by the tasks whose leaf the contracted cluster
+  # exports (L_J) and by no other: an uncontracted arm has no integrator, and
+  # a leaf outside the cluster is reached without crossing it. The two
   # references are computed off the market and never pay it, so the overhead
   # moves the arm against a fixed reference rather than moving both.
-  enc_ms <- if (interface == "off") 0 else enc_overhead_ms
+  enc_leaves <- if (interface == "off") character(0) else
+    node_exported_leaves(spec %||% node_instance(graph_type), node_cluster(graph_type))
 
   set.seed(seed)
   # Two environments, and the difference between them IS the interface: the
@@ -1067,6 +1077,11 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   env_adv  <- scale_capacities(
     node_run_env(graph_type, load_level, N, leaf_mix, interface,
                  advertise_frac, spec = spec_used), cap_scale)
+  # What the bid sees of the overhead, on the leaves that pay it.
+  if (enc_overhead_ms != 0 && length(enc_leaves) > 0L) {
+    L <- rownames(env_adv$anc)
+    env_adv$enc_overhead_leaf <- setNames(enc_overhead_ms * (L %in% enc_leaves), L)
+  }
   agents   <- init_agents(N)
   providers <- leaf_providers(agents, rownames(env_true$anc))
 
@@ -1168,6 +1183,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
       if (mechanism == "market_cc") {
         b$base_latency <- unname(node_queue_latency_per_leaf(
           e, prev_util, coefficient = queue_coef)[as.character(tasks$recipe)])
+        if (!is.null(e$enc_overhead_leaf)) {
+          b$base_latency <- b$base_latency +
+            unname(e$enc_overhead_leaf[as.character(tasks$recipe)])
+        }
         a <- 0
       }
       pp <- node_price_process(mechanism, state, e, reserve_markup)
@@ -1272,7 +1291,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     # queue, which is where an over-committing interface pays for itself.
     results_t <- execute_allocation(allocation, envT, util_clamp = exec_clamp,
                                     queue_coefficient = queue_coef,
-                                    enc_overhead_ms = enc_ms)
+                                    enc_overhead_ms = enc_overhead_ms,
+                                    enc_leaves = enc_leaves)
     if (nrow(results_t) > 0 &&
         !all(c("deadline", "value_base") %in% names(results_t))) {
       results_t <- results_t %>%
@@ -1756,6 +1776,21 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
 # ===========================================================================
 # What the interface costs to cross: the overhead sweep on this substrate
 # ===========================================================================
+
+#' The leaves whose tasks cross a contracted cluster's interface.
+#'
+#' A leaf is exported by the cluster when any cluster node is among its
+#' ancestors, the set `contract_cluster()` calls L_J. On T and X the cluster
+#' is {e1, e2} and L_J is {l1, l2, l3}; l4 is reached through e3 alone. On S
+#' the cluster is {e1, e2, e3} and every leaf is exported.
+#'
+#' @param spec    An instance spec.
+#' @param cluster The nodes the integrator exports.
+#' @return Character vector of leaves.
+node_exported_leaves <- function(spec, cluster) {
+  anc <- ancestor_matrix(spec)
+  rownames(anc)[rowSums(anc[, cluster, drop = FALSE]) > 0]
+}
 
 #' The grid the encapsulation overhead is swept on.
 #'

@@ -652,10 +652,16 @@ critical_path_to_leaves <- function(graph, node_latency, leaves) {
 #'                          reference set scored inside a round loop needs: a
 #'                          draw there would shift the arm's own stream. The
 #'                          default is the model's 10 per cent.
+#' @param enc_leaves      On the node substrate, the leaves whose tasks cross
+#'                          the integrator's interface (the contracted
+#'                          cluster's exported set); only their paths pay
+#'                          `enc_overhead_ms`. NULL charges every path, which
+#'                          is what the per-tier drivers do.
 #' @return A tibble with columns: task_id, agent_id, latency, deadline, success.
 execute_allocation <- function(allocation, env, efficiency_factor = NULL,
                                enc_overhead_ms = 0, latency_noise_cv = 0.1,
-                               util_clamp = 0.99, queue_coefficient = 2) {
+                               util_clamp = 0.99, queue_coefficient = 2,
+                               enc_leaves = NULL) {
   n_tasks <- nrow(allocation)
   if (n_tasks == 0) {
     return(tibble(
@@ -717,7 +723,9 @@ execute_allocation <- function(allocation, env, efficiency_factor = NULL,
 
   if (per_leaf) {
     leaf_ms <- critical_path_to_leaves(env$graph, node_latency,
-                                       leaf_set(env$spec)) + enc_overhead_ms
+                                       leaf_set(env$spec))
+    leaf_ms <- leaf_ms + if (is.null(enc_leaves)) enc_overhead_ms
+                         else enc_overhead_ms * (names(leaf_ms) %in% enc_leaves)
     # A recipe label names one leaf under unit demand and a leaf pair under
     # bundle demand; a bundle's task is done when its slowest leaf is.
     critical_latency <- vapply(

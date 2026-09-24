@@ -139,3 +139,51 @@ test_that("the summary reports no crossing the levels did not bracket", {
   s <- node_overhead_summary(raw)
   expect_true(all(is.na(dplyr::filter(s, architecture == "hybrid_noema")$latency_lead_zero_at)))
 })
+
+
+# ---- the overhead is paid on the exported path only --------------------------
+#
+# The protocol translation is paid by tasks that cross the integrator's
+# interface, which are the tasks whose leaf the contracted cluster exports
+# (L_J), and the agents see it at bid time as they see every other latency.
+
+test_that("the exported leaf set is the cluster's leaves", {
+  expect_equal(node_exported_leaves(node_instance("tree"), node_cluster("tree")),
+               c("l1", "l2", "l3"))
+  expect_equal(node_exported_leaves(node_instance("entangled"),
+                                    node_cluster("entangled")),
+               c("l1", "l2", "l3"))
+  expect_equal(node_exported_leaves(node_instance("sp"), node_cluster("sp")),
+               c("l1", "l2", "l3", "l4"))
+})
+
+ov_alloc <- function() tibble::tibble(
+  task_id = c("in", "out"), agent_id = 1:2, deadline = 1000,
+  value_base = 1.5, recipe = c("l1", "l4"))
+
+test_that("execution charges the overhead only on a leaf the cluster exports", {
+  env <- node_run_env("tree", "high", 90L, "uniform", "off")
+  a0  <- execute_allocation(ov_alloc(), env, latency_noise_cv = 0)
+  a50 <- execute_allocation(ov_alloc(), env, latency_noise_cv = 0,
+                            enc_overhead_ms = 50, enc_leaves = c("l1", "l2", "l3"))
+  expect_equal(a50$latency - a0$latency, c(50, 0))
+  # Without an exported set the per-tier behaviour is kept: every path pays.
+  ab <- execute_allocation(ov_alloc(), env, latency_noise_cv = 0,
+                           enc_overhead_ms = 50)
+  expect_equal(ab$latency - a0$latency, c(50, 50))
+})
+
+test_that("the bid sees the overhead on an exported leaf and nowhere else", {
+  env <- node_run_env("tree", "high", 90L, "uniform", "inner")
+  b0  <- node_bid_inputs(env, ov_alloc(), NULL)
+  env$enc_overhead_leaf <- setNames(c(50, 50, 50, 0), c("l1", "l2", "l3", "l4"))
+  b50 <- node_bid_inputs(env, ov_alloc(), NULL)
+  expect_equal(b50$base_latency - b0$base_latency, c(50, 0))
+})
+
+test_that("agents respond to the overhead, so the admitted volume moves", {
+  one <- function(d) node_run_single("tree", "high", N = 90L, seed = 3L,
+                                     n_rounds = 8L, architecture = "hybrid_ema",
+                                     enc_overhead_ms = d)
+  expect_false(isTRUE(all.equal(one(0)$tokens_admitted, one(50)$tokens_admitted)))
+})
