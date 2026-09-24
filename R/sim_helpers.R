@@ -205,14 +205,17 @@ agentic_graph <- function(path = agentic_profile_path()) {
 #' Per-stage weights and latencies of a recording.
 #'
 #' @param path Path to a measured profile.
-#' @return A tibble of `node`, `tier`, `demand_weight`, `mean_latency_ms`.
+#' @return A tibble of `node`, `tier`, `demand_weight`, `mean_latency_ms` and
+#'   `mean_tokens_per_task`, the measured token count the weight is derived from.
 agentic_stages <- function(path = agentic_profile_path()) {
   st <- jsonlite::fromJSON(path)$aggregate_stages
   stopifnot("the profile carries no per-stage aggregate" = !is.null(st))
   tibble(node            = names(st),
          tier            = vapply(st, function(x) x$tier, character(1)),
          demand_weight   = vapply(st, function(x) x$demand_weight, numeric(1)),
-         mean_latency_ms = vapply(st, function(x) x$mean_latency_ms, numeric(1)))
+         mean_latency_ms = vapply(st, function(x) x$mean_latency_ms, numeric(1)),
+         mean_tokens_per_task = vapply(st, function(x)
+           x$mean_tokens_per_task %||% NA_real_, numeric(1)))
 }
 
 #' The measured profile files, relative to the project root.

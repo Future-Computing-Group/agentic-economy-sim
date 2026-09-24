@@ -164,3 +164,32 @@ test_that("the node-level agentic environment clears and certifies per arm", {
       e, init_agents(40L), 1L, 1L, k$deadlines)))
   }
 })
+
+
+# ---- one token unit for the whole union ------------------------------------
+#
+# Each recording normalises its weights to its own smallest stage, so two
+# recordings' weights are in two different units. The union is built on one:
+# the smallest per-task token count across every stage of every recording,
+# the rule each recording applies to itself, applied to the union.
+
+test_that("the union weights every stage in one common token unit", {
+  spec <- agentic_union_spec(agentic_profile_paths())
+  expect_equal(spec$token_unit, 58.2)          # tool0, pattern a
+  w <- spec$weight
+  # A stage one recording executed takes that recording's token count.
+  expect_equal(w[["plan"]], 83.35 / 58.2)
+  expect_equal(w[["plan_b"]], 92.7 / 58.2)
+  expect_equal(w[["summary"]], 347.6 / 58.2)
+  # The shared tool stage is one service sampled by both recordings: the mean
+  # of its two token counts, in the common unit.
+  expect_equal(w[["tool1"]], (96.15 + 83.4) / 2 / 58.2)
+  expect_equal(round(w[["tool1"]], 3), 1.543)
+})
+
+test_that("a single recording keeps its own unit", {
+  spec <- agentic_union_spec(agentic_profile_paths()[1])
+  expect_equal(spec$token_unit, 58.2)
+  expect_equal(spec$weight[["tool0"]], 1)
+  expect_equal(spec$weight[["tool1"]], 96.15 / 58.2)
+})

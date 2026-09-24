@@ -293,8 +293,16 @@ node_rho_bottleneck <- function(graph_type, n_agents, load_level = "high",
 #' planners carry their whole tier and the stages that do the work are what
 #' binds.
 #'
-#' A stage recorded by more than one pattern takes the mean of its weights and
-#' delays; it is one service and the patterns are two samples of it.
+#' Weights are put on ONE token unit before the union. Each recording stores
+#' weights normalised to its own smallest stage, so two recordings' weights
+#' are in two units and mixing them would enter every stage of the second
+#' pattern at the ratio of the two units. The union therefore reads each
+#' stage's measured tokens per task and divides by one unit: the smallest
+#' per-task token count across every stage of every recording, which is the
+#' rule each recording applies to itself, applied to the union. The unit is
+#' recorded in the spec as `token_unit`. A stage recorded by more than one
+#' pattern takes the mean of its token counts and delays; it is one service
+#' and the patterns are two samples of it.
 #'
 #' @param paths         Paths to measured profiles.
 #' @param tier_capacity Named numeric vector of per-tier capacity totals.
@@ -310,9 +318,13 @@ agentic_union_spec <- function(paths,
   nodes <- dplyr::distinct(dplyr::bind_rows(lapply(gs, `[[`, "nodes")))
   edges <- dplyr::distinct(dplyr::bind_rows(lapply(gs, `[[`, "edges")))
 
-  st <- dplyr::bind_rows(lapply(paths, agentic_stages)) %>%
+  st_all <- dplyr::bind_rows(lapply(paths, agentic_stages))
+  stopifnot("a profile carries no per-stage token count" =
+              !anyNA(st_all$mean_tokens_per_task))
+  unit <- min(st_all$mean_tokens_per_task)
+  st <- st_all %>%
     dplyr::group_by(.data$node) %>%
-    dplyr::summarise(demand_weight   = mean(.data$demand_weight),
+    dplyr::summarise(demand_weight   = mean(.data$mean_tokens_per_task) / unit,
                      mean_latency_ms = mean(.data$mean_latency_ms),
                      .groups = "drop")
   i <- match(nodes$node, st$node)
@@ -326,7 +338,8 @@ agentic_union_spec <- function(paths,
   list(nodes  = tibble(node = nodes$node, phys = nodes$tier, capacity = cap,
                        base_ms = st$mean_latency_ms[i]),
        edges  = edges,
-       weight = setNames(st$demand_weight[i], nodes$node))
+       weight = setNames(st$demand_weight[i], nodes$node),
+       token_unit = unit)
 }
 
 #' The node-level environment of the measured workload.
