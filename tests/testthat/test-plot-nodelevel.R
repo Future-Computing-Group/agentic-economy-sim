@@ -157,6 +157,40 @@ test_that("the instances print as T, S and X in that order", {
   expect_equal(levels(inst), c("T", "S", "X"))
 })
 
+test_that("the structure figure draws shortfall, allocative ratio and latency", {
+  raw <- node_stub(load_level = c("low", "medium", "high"))
+  # T and S carry structural zeros; only X has a shortfall to draw.
+  raw$greedy_exact_incidence[raw$graph_type != "entangled"] <- 0
+  p <- make_node_exp1_tufte(raw)
+  panels <- patch_plots(p)
+  panels <- panels[vapply(panels, function(q) !is.null(q$labels$y), logical(1))]
+  expect_equal(vapply(panels, function(q) q$labels$y, character(1)),
+               c("Exactness shortfall", "Allocative ratio", "Latency (ms)"))
+  for (q in panels) {
+    geoms <- vapply(q$layers, function(l) class(l$geom)[1], character(1))
+    expect_true("GeomErrorbar" %in% geoms)
+  }
+  # The interval is the Student t interval over the seeds, and a structural
+  # zero is a flat point at zero rather than a missing one.
+  d  <- panels[[1]]$data
+  x  <- raw$greedy_exact_incidence[raw$graph_type == "entangled" &
+                                     raw$load_level == "high"]
+  hi <- d$greedy_exact_incidence_hi[d$instance == "X" & d$load_level == "high"]
+  expect_equal(hi, mean(x) + stats::qt(0.975, length(x) - 1) * stats::sd(x) /
+                 sqrt(length(x)))
+  zero <- d[d$instance %in% c("T", "S"), ]
+  expect_true(all(zero$greedy_exact_incidence_mean == 0))
+  expect_true(all(zero$greedy_exact_incidence_lo == 0 &
+                    zero$greedy_exact_incidence_hi == 0))
+  # The interval is drawn solid whatever the load's line type, so the dotted
+  # high-load line does not thin it to nothing.
+  eb <- Filter(function(l) inherits(l$geom, "GeomErrorbar"), panels[[1]]$layers)[[1]]
+  expect_equal(eb$aes_params$linetype, "solid")
+  # The shortfall axis starts at zero.
+  built <- ggplot2::ggplot_build(panels[[1]])
+  expect_lte(min(built$layout$panel_params[[1]]$y.range), 0)
+})
+
 test_that("the congestion levels print as calibrated and baseline", {
   # The mechanism figure reports the calibrated level; the string is the
   # manuscript's, and the store's own, so a rename on either side fails here.

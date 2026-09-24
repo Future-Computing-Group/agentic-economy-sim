@@ -100,14 +100,15 @@ node_label_col <- function(x, map) factor(map[as.character(x)], levels = unname(
 #' @param df      Per-seed node-level rows.
 #' @param by      Grouping columns.
 #' @param metrics Response columns to summarise.
+#' @param ci      Interval function returning `mean`, `lo` and `hi`.
 #' @return A tibble carrying `<metric>_mean`, `_lo` and `_hi`.
-node_plot_ci <- function(df, by, metrics) {
+node_plot_ci <- function(df, by, metrics, ci = mean_ci95) {
   df %>%
     dplyr::group_by(dplyr::across(dplyr::all_of(by))) %>%
     dplyr::summarise(dplyr::across(dplyr::all_of(metrics),
-                                   list(mean = \(x) mean_ci95(x)$mean,
-                                        lo   = \(x) mean_ci95(x)$lo,
-                                        hi   = \(x) mean_ci95(x)$hi),
+                                   list(mean = \(x) ci(x)$mean,
+                                        lo   = \(x) ci(x)$lo,
+                                        hi   = \(x) ci(x)$hi),
                                    .names = "{.col}_{.fn}"),
                      .groups = "drop")
 }
@@ -129,19 +130,23 @@ node_plot_ci <- function(df, by, metrics) {
 #' @param dodge_w Dodge width; 0 for a continuous x.
 #' @param base    Base font size.
 #' @param xlab    x axis label, NULL for none.
+#' @param ci_linetype Line type for the interval bars; NULL inherits the
+#'   figure's own line-type mapping.
 #' @return A ggplot.
 node_panel <- function(df, mapping, ycol, ylab, pct = FALSE, facet = NULL,
-                       dodge_w = 0.22, base = 8, xlab = NULL, acc = 1) {
+                       dodge_w = 0.22, base = 8, xlab = NULL, acc = 1,
+                       ci_linetype = NULL) {
   pos <- if (dodge_w > 0) position_dodge(width = dodge_w) else position_identity()
   p <- ggplot(df, mapping) +
     geom_line(aes(y = .data[[paste0(ycol, "_mean")]]),
               linewidth = 0.45, position = pos, na.rm = TRUE) +
     geom_point(aes(y = .data[[paste0(ycol, "_mean")]]),
                size = 1.2, position = pos, na.rm = TRUE) +
-    geom_errorbar(aes(ymin = .data[[paste0(ycol, "_lo")]],
-                      ymax = .data[[paste0(ycol, "_hi")]]),
-                  width = 0, linewidth = 0.3, alpha = 0.6, position = pos,
-                  na.rm = TRUE) +
+    do.call(geom_errorbar, c(list(
+      aes(ymin = .data[[paste0(ycol, "_lo")]],
+          ymax = .data[[paste0(ycol, "_hi")]]),
+      width = 0, linewidth = 0.3, alpha = 0.6, position = pos, na.rm = TRUE),
+      if (!is.null(ci_linetype)) list(linetype = ci_linetype))) +
     labs(x = xlab, y = ylab) +
     theme_tufte_ieee(base_size = base)
   if (!is.null(facet)) p <- p + facet_wrap(stats::as.formula(paste("~", facet)), ncol = 2)
@@ -149,35 +154,61 @@ node_panel <- function(df, mapping, ycol, ylab, pct = FALSE, facet = NULL,
   p
 }
 
+#' A Student t 95% interval over the seeds of a cell.
+#'
+#' The interval the node-level brackets are reported with. A cell with no
+#' spread is its own point, so a structural zero draws as a flat mark at zero.
+#'
+#' @param x Per-seed values.
+#' @return A one-row tibble of `mean`, `lo` and `hi`.
+mean_ci_t <- function(x) {
+  x <- x[is.finite(x)]
+  n <- length(x)
+  if (n == 0L) return(tibble::tibble(mean = NA_real_, lo = NA_real_, hi = NA_real_))
+  m <- mean(x)
+  h <- if (n > 1L) stats::qt(0.975, n - 1L) * stats::sd(x) / sqrt(n) else 0
+  tibble::tibble(mean = m, lo = m - h, hi = m + h)
+}
+
 # Medium then high, the order the supplement's facets are read in.
 node_load2 <- function(x) factor(as.character(x), levels = c("medium", "high"))
 
 # ===========================================================================
-# Structure: latency, drop rate and admitted volume by instance and load
+# Structure: exactness shortfall, allocative ratio and latency
 # ===========================================================================
 
 #' Node-level Exp.1 figure: the three instances at three loads.
+#'
+#' The structural result first: how often the greedy pack falls short of the
+#' exact one, which is zero by construction on the laminar instances and
+#' positive on the crossing one; then what each instance's admitted set is
+#' worth against the exact optimum; then the latency it is delivered at. Every
+#' point carries the Student t 95% interval over the seeds. Drop rate and
+#' admitted volume are tabulated rather than drawn.
 #'
 #' @param raw_df Per-seed rows from node_exp1_results_raw.
 #' @return A patchwork of three panels.
 make_node_exp1_tufte <- function(raw_df) {
   df <- node_plot_ci(node_instance_col(dplyr::bind_rows(raw_df)),
                      c("instance", "load_level"),
-                     c("median_latency", "drop_rate", "tokens_admitted"))
+                     c("greedy_exact_incidence", "alloc_ratio_true",
+                       "median_latency"), ci = mean_ci_t)
   df$load_level <- factor(as.character(df$load_level),
                           levels = c("low", "medium", "high"))
   base_aes <- aes(x = instance, colour = load_level, linetype = load_level,
                   group = load_level)
   pan <- function(y, lab, pct = FALSE)
-    node_panel(df, base_aes, y, lab, pct = pct, dodge_w = 0.18, base = 12) +
+    node_panel(df, base_aes, y, lab, pct = pct, dodge_w = 0.18, base = 12,
+               ci_linetype = "solid") +
       scale_colour_manual(values = palette_load_tufte, name = "Load") +
       scale_linetype_manual(values = linetype_load, name = "Load")
 
-  # Price volatility is not a panel here; the supplement's Exp.1 table carries
-  # it, and the figure carries the operational consequences instead.
-  .bottom((pan("median_latency", "Latency (ms)") +
-           pan("drop_rate", "Drop rate", TRUE) +
-           pan("tokens_admitted", "Admitted volume")) +
+  # The shortfall axis starts at zero, so the laminar instances' structural
+  # zeros sit on it as flat marks and the crossing instance reads against it.
+  .bottom((pan("greedy_exact_incidence", "Exactness shortfall") +
+             ggplot2::expand_limits(y = 0) +
+           pan("alloc_ratio_true", "Allocative ratio") +
+           pan("median_latency", "Latency (ms)")) +
           plot_layout(ncol = 3, guides = "collect"))
 }
 
