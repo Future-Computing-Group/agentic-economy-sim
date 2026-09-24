@@ -3665,12 +3665,19 @@ node_existence_summary <- function(rows) {
 #' block reports follows, for all three instances, so the converse is read
 #' where the rest of the evaluation is and not only where it can be
 #' enumerated. On the laminar instances the two points are the same, so those
-#' rows repeat the first ones exactly.
+#' rows repeat the first ones exactly. The contention sweep follows: agent
+#' count crossed with capacity scale, every instance, so the gain can be read
+#' against how hard the capacity binds and how inexact the greedy pack is
+#' there. A sweep point the first two blocks already run is not repeated.
 #'
 #' @param seeds  Monte Carlo seeds per cell.
 #' @param counts Evaluation population per instance.
+#' @param sweep_N,sweep_cap The contention sweep's agent counts and capacity
+#'   scales.
 #' @return A tibble with one row per branch.
-node_exp7b_grid <- function(seeds, counts = node_agents()) {
+node_exp7b_grid <- function(seeds, counts = node_agents(),
+                            sweep_N = c(8L, 15L, 30L, 45L, 90L),
+                            sweep_cap = c(0.1, 0.25, 0.5, 1.0)) {
   inst <- c("tree", "sp", "entangled")
   enumerable <- tidyr::expand_grid(graph_type = inst, seed = seeds) %>%
     mutate(operating_point = "enumerable",
@@ -3680,7 +3687,12 @@ node_exp7b_grid <- function(seeds, counts = node_agents()) {
   evaluation <- tidyr::expand_grid(graph_type = inst, seed = seeds) %>%
     mutate(operating_point = "evaluation",
            N = unname(counts[graph_type]), cap_scale = 1.0)
-  bind_rows(enumerable, evaluation)
+  first <- bind_rows(enumerable, evaluation)
+  sweep <- tidyr::expand_grid(graph_type = inst, N = as.integer(sweep_N),
+                              cap_scale = sweep_cap, seed = seeds) %>%
+    mutate(operating_point = "sweep") %>%
+    anti_join(first, by = c("graph_type", "N", "cap_scale", "seed"))
+  bind_rows(first, sweep[names(first)])
 }
 
 #' The joint-misreport gain per instance and operating point.
@@ -3688,16 +3700,23 @@ node_exp7b_grid <- function(seeds, counts = node_agents()) {
 #' @param rows Per-seed results of the block, carrying `operating_point`.
 #' @param by   The variables a point is defined by.
 #' @return One row per instance and point: the gain's mean over seeds (of each
-#'   seed's mean) and its maximum over seeds (of each seed's maximum).
+#'   seed's mean) and its maximum over seeds (of each seed's maximum), the
+#'   certifier's verdict (the distinct verdicts, and whether every seed was
+#'   certified), and the greedy exactness shortfall incidence at that point,
+#'   so the gain can be read against inexactness.
 node_exp7b_summary <- function(rows, by = c("graph_type", "operating_point",
                                             "N", "cap_scale")) {
-  bind_rows(rows) %>%
-    group_by(across(all_of(intersect(by, names(bind_rows(rows)))))) %>%
+  df <- bind_rows(rows)
+  if (!"greedy_exact_incidence" %in% names(df)) df$greedy_exact_incidence <- NA_real_
+  df %>%
+    group_by(across(all_of(intersect(by, names(df))))) %>%
     summarise(n_seeds   = dplyr::n_distinct(seed),
               gain_mean = mean(br_gain_mean, na.rm = TRUE),
               gain_max  = max(br_gain_max, na.rm = TRUE),
-              certificate_ok = if ("certificate" %in% names(pick(everything())))
-                all(certificate) else NA,
+              certificate    = paste(sort(unique(as.character(certificate))),
+                                     collapse = "/"),
+              certificate_ok = all(as.character(certificate) == "certified"),
+              exactness_incidence = mean(greedy_exact_incidence, na.rm = TRUE),
               .groups = "drop")
 }
 

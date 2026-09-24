@@ -433,6 +433,8 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
   fit_n       <- 0L
   ratio_sum   <- 0
   ratio_n     <- 0L
+  inc_below   <- 0L
+  inc_n       <- 0L
 
   for (t in seq_len(n_rounds)) {
     tasks_all <- exp7_round_tasks(env, agents, t, seed, deadlines, substrate)
@@ -447,6 +449,17 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
     # allocator: a Clarke pivot over it would be a DSIC claim on a region that
     # carries no such guarantee. It runs only where the round fits the
     # enumeration cap, and the share of rounds that do is reported.
+    # The greedy shortfall incidence at any size: the leaf-block optimum of
+    # the round's true values against the greedy pack of the same values. It
+    # draws nothing, so the run's stream does not move.
+    if (substrate == "node") {
+      pair <- node_exact_pair(env, tasks_all, true_ev)
+      if (is.finite(pair[["exact"]]) && pair[["exact"]] > 0) {
+        inc_n     <- inc_n + 1L
+        inc_below <- inc_below +
+          as.integer(pair[["greedy"]] < pair[["exact"]] * (1 - 1e-9))
+      }
+    }
     if (substrate == "node") {
       fits  <- nrow(tasks_all) <= 14L
       fit_n <- fit_n + as.integer(fits)
@@ -525,7 +538,8 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
     br_gain_max  = if (length(round_max) > 0) max(round_max) else 0,
     br_gain_mean = if (ar_count > 0) ar_gain_sum / ar_count else 0,
     br_gain_member_argmax     = factor(best_member),
-    independent_fallback_rate = if (ar_count > 0) fallback_n / ar_count else 0
+    independent_fallback_rate = if (ar_count > 0) fallback_n / ar_count else 0,
+    greedy_exact_incidence    = if (inc_n > 0) inc_below / inc_n else NA_real_
   )
 }
 
