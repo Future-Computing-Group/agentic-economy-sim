@@ -1149,26 +1149,36 @@ list(
   tar_target(node_exp7a_summary_table,
              exp7_aggregate(node_exp7a_results_raw)),
   tar_target(node_stats_exp7a, stat_exp7(bind_rows(node_exp7a_results_raw))),
+  # The joint-misreport converse at the point it can be enumerated at and at
+  # the evaluation point every other block reports, side by side.
+  tar_target(node_exp7b_param_grid, node_exp7b_grid(seq_len(n_seeds))),
   tar_target(
     node_exp7b_results_raw,
-    exp7b_run_single(
-      graph_type = node_exp7_param_grid$graph_type,
-      load_level = "high",
-      N          = ifelse(node_exp7_param_grid$graph_type == "entangled", 8L,
-                          node_agent_counts[[node_exp7_param_grid$graph_type]]),
-      seed       = node_exp7_param_grid$seed,
-      substrate  = "node",
-      cap_scale  = ifelse(node_exp7_param_grid$graph_type == "entangled", 0.1, 1.0),
-      deadlines  = task_deadlines,
-      lambda_l_default = node_lambda,
-      n_rounds   = 30L
+    dplyr::mutate(
+      exp7b_run_single(
+        graph_type = node_exp7b_param_grid$graph_type,
+        load_level = "high",
+        N          = node_exp7b_param_grid$N,
+        seed       = node_exp7b_param_grid$seed,
+        substrate  = "node",
+        cap_scale  = node_exp7b_param_grid$cap_scale,
+        deadlines  = task_deadlines,
+        lambda_l_default = node_lambda,
+        n_rounds   = 30L
+      ),
+      operating_point = node_exp7b_param_grid$operating_point,
+      cap_scale       = node_exp7b_param_grid$cap_scale
     ),
-    pattern   = map(node_exp7_param_grid),
+    pattern   = map(node_exp7b_param_grid),
     iteration = "vector"
   ),
   tar_target(node_exp7b_summary_table,
-             exp7b_aggregate(node_exp7b_results_raw)),
-  tar_target(node_stats_exp7b, stat_exp7b(bind_rows(node_exp7b_results_raw))),
+             node_exp7b_summary(bind_rows(node_exp7b_results_raw))),
+  # The Kruskal-Wallis contrast is taken on the rows the block has always run,
+  # so it is one test over one design rather than a pool of two points.
+  tar_target(node_stats_exp7b,
+             stat_exp7b(dplyr::filter(bind_rows(node_exp7b_results_raw),
+                                      operating_point == "enumerable"))),
 
   # -- the measured workload on the node substrate ---------------------------
   # Both recordings are tracked as files, so a re-recording invalidates every

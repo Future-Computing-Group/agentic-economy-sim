@@ -3520,3 +3520,53 @@ node_existence_summary <- function(rows) {
                                               gap / ip_value, 0)),
               .groups = "drop")
 }
+
+
+# ===========================================================================
+# The joint-misreport block at the operating points it is read at
+# ===========================================================================
+
+#' The grid the joint-misreport block branches over.
+#'
+#' The rows the block has always run come first: the laminar instances at
+#' their evaluation populations and the crossing instance at the point small
+#' enough to enumerate every joint misreport (8 agents, a tenth of the
+#' capacity, so the capacity still binds). The evaluation point every other
+#' block reports follows, for all three instances, so the converse is read
+#' where the rest of the evaluation is and not only where it can be
+#' enumerated. On the laminar instances the two points are the same, so those
+#' rows repeat the first ones exactly.
+#'
+#' @param seeds  Monte Carlo seeds per cell.
+#' @param counts Evaluation population per instance.
+#' @return A tibble with one row per branch.
+node_exp7b_grid <- function(seeds, counts = node_agents()) {
+  inst <- c("tree", "sp", "entangled")
+  enumerable <- tidyr::expand_grid(graph_type = inst, seed = seeds) %>%
+    mutate(operating_point = "enumerable",
+           N = ifelse(graph_type == "entangled", 8L,
+                      unname(counts[graph_type])),
+           cap_scale = ifelse(graph_type == "entangled", 0.1, 1.0))
+  evaluation <- tidyr::expand_grid(graph_type = inst, seed = seeds) %>%
+    mutate(operating_point = "evaluation",
+           N = unname(counts[graph_type]), cap_scale = 1.0)
+  bind_rows(enumerable, evaluation)
+}
+
+#' The joint-misreport gain per instance and operating point.
+#'
+#' @param rows Per-seed results of the block, carrying `operating_point`.
+#' @param by   The variables a point is defined by.
+#' @return One row per instance and point: the gain's mean over seeds (of each
+#'   seed's mean) and its maximum over seeds (of each seed's maximum).
+node_exp7b_summary <- function(rows, by = c("graph_type", "operating_point",
+                                            "N", "cap_scale")) {
+  bind_rows(rows) %>%
+    group_by(across(all_of(intersect(by, names(bind_rows(rows)))))) %>%
+    summarise(n_seeds   = dplyr::n_distinct(seed),
+              gain_mean = mean(br_gain_mean, na.rm = TRUE),
+              gain_max  = max(br_gain_max, na.rm = TRUE),
+              certificate_ok = if ("certificate" %in% names(pick(everything())))
+                all(certificate) else NA,
+              .groups = "drop")
+}
