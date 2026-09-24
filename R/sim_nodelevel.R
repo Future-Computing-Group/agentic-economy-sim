@@ -1090,6 +1090,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   env_adv  <- scale_capacities(
     node_run_env(graph_type, load_level, N, leaf_mix, interface,
                  advertise_frac, spec = spec_used), cap_scale)
+  # Whether the advertised region is the true one or strictly inside it: a
+  # property of the instance and the architecture, so it is read once, before
+  # any cap or coupling is applied, and without touching the run's stream.
+  region <- node_region_relation(env_adv, env_true)
   # What the bid sees of the overhead, on the leaves that pay it.
   if (enc_overhead_ms != 0 && length(enc_leaves) > 0L) {
     L <- rownames(env_adv$anc)
@@ -1519,7 +1523,12 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     # What the domain slice cost: the demand one coupled budget would have
     # carried that two half budgets cannot. NA where nothing was sliced.
     stranded_demand            = if (all(is.na(strandV))) NA_real_
-                                 else mean(strandV, na.rm = TRUE)
+                                 else mean(strandV, na.rm = TRUE),
+    # Whether the region the market cleared against is the true region's
+    # projection or strictly inside it, and the largest relative shortfall of
+    # the advertised optimum over the weight grid.
+    region_relation            = region$relation,
+    region_max_gap             = region$max_gap
   )
 }
 
@@ -1789,6 +1798,59 @@ node_stat_factor <- function(raw_df, group_var, metrics = node_metrics(),
 # ===========================================================================
 # What the interface costs to cross: the overhead sweep on this substrate
 # ===========================================================================
+
+#' Is the advertised region the true one, or strictly inside it.
+#'
+#' Solves the leaf-level linear programme max w.x subject to every node's
+#' token capacity over the leaves beneath it, on each region, for a fixed grid
+#' of weights: every nonzero 0/1 vector over the leaves (the all-ones vector
+#' among them) and twenty positive vectors drawn from a fixed seed. The two
+#' regions have the same projection onto the leaves where the optima agree on
+#' every weight to 1e-9; otherwise the advertised region is strictly inside
+#' ("inner") where it falls short on some weight and exceeds on none, and the
+#' largest relative shortfall (true minus advertised, over true) is reported
+#' with the first weight that attains it. An interface that advertises more
+#' than the true region carries is "outer" (it exceeds on some weight and
+#' falls short on none) or "crossing" (both); `min_gap` is the largest excess,
+#' negative. The draw saves and restores the global stream, so a run that
+#' calls this does not move.
+#'
+#' @param env_adv  The advertised environment.
+#' @param env_true The true environment.
+#' @param n_random Number of random positive weights.
+#' @return A list of `relation` ("exact", "inner", "outer" or "crossing"),
+#'   `max_gap`, `min_gap` and `weight` (the weight attaining `max_gap`).
+node_region_relation <- function(env_adv, env_true, n_random = 20L) {
+  L <- rownames(env_true$anc)
+  lp_value <- function(env, w) {
+    anc <- env$anc[L, , drop = FALSE]
+    cap <- node_token_capacity(env)[colnames(anc)]
+    lpSolve::lp("max", w, t(anc), rep("<=", ncol(anc)), cap)$objval
+  }
+  bits <- as.matrix(expand.grid(rep(list(0:1), length(L))))
+  bits <- bits[rowSums(bits) > 0, , drop = FALSE]
+  bits <- bits[order(apply(bits, 1, function(b) sum(b * 2^(seq_along(b) - 1)))), ,
+               drop = FALSE]
+  had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  if (had) old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+  on.exit(if (had) assign(".Random.seed", old, envir = globalenv())
+          else rm(".Random.seed", envir = globalenv()))
+  set.seed(1L)
+  rnd <- matrix(stats::runif(n_random * length(L), 0.1, 1), ncol = length(L))
+  W <- rbind(unname(bits), rnd)
+  gap <- apply(W, 1, function(w) {
+    t_v <- lp_value(env_true, w)
+    a_v <- lp_value(env_adv, w)
+    if (t_v <= 0) 0 else (t_v - a_v) / t_v
+  })
+  gap[abs(gap) <= 1e-9] <- 0
+  i  <- which.max(gap)
+  hi <- max(gap); lo <- min(gap)
+  relation <- if (hi > 0 && lo < 0) "crossing" else if (hi > 0) "inner" else
+    if (lo < 0) "outer" else "exact"
+  list(relation = relation, max_gap = max(hi, 0), min_gap = min(lo, 0),
+       weight = if (hi > 0) setNames(W[i, ], L) else NULL)
+}
 
 #' The leaves whose tasks cross a contracted cluster's interface.
 #'
