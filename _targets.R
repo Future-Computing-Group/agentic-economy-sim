@@ -520,7 +520,7 @@ list(
   # unequal within one sharing component, admitted against the catalogue
   # interface and charged their sizes, over the closed-form sweep's sizes.
   tar_target(exp11_proportional_table,
-             exp11_proportional_table(seeds = seq_len(n_seeds))),
+             exp11_proportional_run_table(seeds = seq_len(n_seeds))),
 
   # ===========================================================================
   # Experiment 12: Encapsulation overhead (hybrid, enc_overhead_ms swept)

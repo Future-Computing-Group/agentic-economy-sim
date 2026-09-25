@@ -388,7 +388,7 @@ test_that("the recipes are one sharing component", {
 })
 
 test_that("the proportional arm is its own table beside the existing ones", {
-  tb <- exp11_proportional_table(lambda_2 = c(1, 2), seeds = 1:2, n_rounds = 5L)
+  tb <- exp11_proportional_run_table(lambda_2 = c(1, 2), seeds = 1:2, n_rounds = 5L)
   expect_equal(nrow(tb), 2L)
   expect_true(all(c("lambda_2", "rho_predicted", "rho_measured_max",
                     "rho_measured_mean", "n_seeds") %in% names(tb)))

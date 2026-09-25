@@ -518,8 +518,8 @@ exp11_proportional_run <- function(lambda_2, kappa = 60, seed = 1L,
 #' @param ...      Passed to exp11_proportional_run().
 #' @return One row per size: the predicted factor, the largest measured factor
 #'   over every seed's binding rounds, and the mean.
-exp11_proportional_table <- function(lambda_2 = c(1, 1.25, 1.5, 2, 4),
-                                     seeds = 1:10, ...) {
+exp11_proportional_run_table <- function(lambda_2 = c(1, 1.25, 1.5, 2, 4),
+                                         seeds = 1:10, ...) {
   rows <- purrr::map_dfr(lambda_2, function(l2) purrr::map_dfr(seeds, function(s)
     exp11_proportional_run(l2, seed = s, ...)))
   rows %>%
