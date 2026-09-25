@@ -240,6 +240,35 @@ test_that("inner exposure is deliverable and its price is measurable", {
   expect_gt(inner$forgone, 0)                 # the safe interface has a price
 })
 
+test_that("the control is integral at the scaling the proposition needs", {
+  ctl <- exp11_inner_exposure_control()
+  raw   <- ctl[ctl$regime == "raw_catalogue", ]
+  inner <- ctl[ctl$regime == "inner_exposure", ]
+  # Singleton catalogue ranks at C = (2, 2) and the largest equal-sided
+  # integral box, both computed rather than typed.
+  expect_equal(raw$advertised, 6)
+  expect_equal(inner$advertised, 3)
+  expect_equal(raw$overcommitment, 2)
+  expect_equal(inner$overcommitment, 1)
+  expect_equal(raw$deliverable_optimum, 4)
+  expect_equal(inner$forgone, 1)
+  expect_true(all(ctl$box_integral))
+})
+
+test_that("an LP certifies the inner box inside the realisable set, and not the raw one", {
+  ctl <- exp11_inner_exposure_control()
+  expect_true(ctl$inside_realisable[ctl$regime == "inner_exposure"])
+  expect_false(ctl$inside_realisable[ctl$regime == "raw_catalogue"])
+})
+
+test_that("at unit capacity the only integral box is empty", {
+  ctl <- exp11_inner_exposure_control(C = c(1, 1))
+  inner <- ctl[ctl$regime == "inner_exposure", ]
+  expect_equal(inner$advertised, 0)
+  expect_equal(inner$forgone, 2)
+  expect_true(inner$inside_realisable)
+})
+
 # ---- execution charges the admitted mix ------------------------------------
 
 test_that("execution charges the admitted mix, not the count times the mean", {

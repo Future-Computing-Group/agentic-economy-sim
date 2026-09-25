@@ -371,42 +371,62 @@ exp11_overcommitment_sweep <- function(lambda_2 = c(1, 1.25, 1.5, 2, 4),
 #' Raw catalogue exposure against inner-box exposure, on one fixed graph.
 #'
 #' The exposed catalogue is s1 = (1,0), s2 = (0,1), s3 = (1,1) over two internal
-#' resources of unit capacity: a depth-1 tree quotient, so the structural
-#' hypothesis holds while the guarantee fails, because the catalogue rank is not
-#' submodular. Exposing the inner box (1/2, 1/2, 1/2) instead satisfies
-#' A c <= C, so greedy is exact on it and every allocation is deliverable; the
-#' welfare it forgoes is the price of the safe interface.
+#' resources: a depth-1 tree quotient, so the structural hypothesis holds while
+#' the guarantee fails, because the catalogue rank is not submodular. The
+#' proposition is stated for an integral box and an integer-valued rank, so the
+#' control is run at internal capacities of 2, the smallest scaling at which the
+#' largest equal-sided integral box is not empty (at unit capacity it is, and
+#' the safe interface exposes nothing). Every quantity is computed:
+#'
+#'   raw exposure   each slice at its singleton catalogue rank, the largest
+#'                  integer count of it alone that fits;
+#'   inner box      the largest equal-sided integral box b = (t, t, t) with
+#'                  A'b <= C;
+#'   optimum        the deliverable integral optimum, by enumeration over the
+#'                  slices' copies.
+#'
+#' The certificate is independent of that arithmetic: for each exposure and
+#' each internal resource, a linear programme maximises the resource's load
+#' over the exposed box, and the box lies inside the realisable set exactly
+#' when no maximum exceeds the resource's capacity.
 #'
 #' The fractional-optimum cell (m = K = 3 with A = [[1,1,0],[0,1,1],[1,0,1]]) is
 #' deliberately NOT built: its integrality gap is a unit-capacity effect that
 #' vanishes at even capacities, so at simulator scale it measures nothing.
 #'
+#' @param C Internal capacities.
 #' @return A two-row tibble: regime, advertised, overcommitment, deliverable
-#'   optimum, and forgone = optimum - advertised. Forgone is the price of the
-#'   safe interface on the inner-exposure row; on the raw-catalogue row it is
-#'   NEGATIVE, which is not welfare gained but welfare advertised and not
-#'   deliverable -- the same over-commitment the factor beside it reports.
-exp11_inner_exposure_control <- function() {
+#'   optimum, forgone = optimum - advertised (negative on the raw row: welfare
+#'   advertised and not deliverable), whether the box is integral, and the LP
+#'   certificate `inside_realisable`.
+exp11_inner_exposure_control <- function(C = c(2, 2)) {
   A <- rbind(c(1, 0), c(0, 1), c(1, 1))   # slices x internal resources
-  C <- c(1, 1)
 
-  # Deliverable optimum, by enumeration rather than by assertion.
-  opt <- exact_pack_by_value(rep(1, 3), A, C)$value
+  singleton <- apply(A, 1, function(a) floor(min(C[a > 0] / a[a > 0])))
+  raw_x     <- singleton
+  t         <- floor(min(C / colSums(A)))
+  inner_x   <- rep(t, nrow(A))
 
-  # Raw catalogue: every slice is individually within its advertised bound, so
-  # the interface admits all three.
-  raw_x   <- c(1, 1, 1)
-  # Inner box: the largest uniform exposure that is deliverable.
-  inner_x <- c(0.5, 0.5, 0.5)
+  # Deliverable integral optimum over the slices' copies, by enumeration.
+  copies <- rep(seq_len(nrow(A)), singleton)
+  opt    <- exact_pack_by_value(rep(1, length(copies)),
+                                A[copies, , drop = FALSE], C)$value
 
   overcommit <- function(x) max(as.vector(x %*% A) / C)
+  inside <- function(x) all(vapply(seq_along(C), function(r) {
+    lp <- lpSolve::lp("max", A[, r], diag(nrow(A)), rep("<=", nrow(A)), x)
+    lp$objval <= C[[r]] + 1e-9
+  }, logical(1)))
 
   tibble(
     regime               = c("raw_catalogue", "inner_exposure"),
     advertised           = c(sum(raw_x), sum(inner_x)),
     overcommitment       = c(overcommit(raw_x), overcommit(inner_x)),
     deliverable_optimum  = opt,
-    forgone              = opt - c(sum(raw_x), sum(inner_x))
+    forgone              = opt - c(sum(raw_x), sum(inner_x)),
+    box_integral         = c(all(raw_x == round(raw_x)),
+                             all(inner_x == round(inner_x))),
+    inside_realisable    = c(inside(raw_x), inside(inner_x))
   )
 }
 
