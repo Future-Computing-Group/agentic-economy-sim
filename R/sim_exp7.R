@@ -409,7 +409,10 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
                              n_rounds = 30L, util_hat = 0.5,
                              deadlines = c(500L, 750L, 1000L),
                              lambda_l_default = 0.005, tol = 1e-9,
-                             substrate = c("tier", "node"), cap_scale = 1.0) {
+                             substrate = c("tier", "node"), cap_scale = 1.0,
+                             mechanism = c("vcg", "market"),
+                             reserve_markup = 1) {
+  mechanism  <- match.arg(mechanism)
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
   substrate  <- match.arg(substrate)
@@ -476,34 +479,21 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
       }
     }
 
-    res_truth <- vcg_allocate(tasks_all, env, util_hat, blb, sm,
-                              lambda_l_default = lambda_l_default)
+    res_truth <- exp7_mechanism_allocate(mechanism, tasks_all, env, util_hat,
+                                         blb, sm, lambda_l_default,
+                                         reserve_markup)
     neg_acc     <- neg_acc + (attr(res_truth, "n_negative_externality") %||% 0L)
-    payment_acc <- payment_acc + sum(res_truth$vcg_payment)
-    welfare_acc <- welfare_acc + sum(res_truth$realised_value)
+    payment_acc <- payment_acc + sum(res_truth$payment)
+    welfare_acc <- welfare_acc + if (mechanism == "vcg")
+      sum(res_truth$realised_value) else
+      sum(true_ev[match(res_truth$task_id, tasks_all$task_id)])
     n_round_eff <- n_round_eff + 1L
 
     round_best <- -Inf   # the truthful member supplies the zero, not a floor
     for (aid in unique(tasks_all$agent_id)) {
-      rows_a   <- which(tasks_all$agent_id == aid)
-      tid_true <- setNames(true_ev[rows_a], tasks_all$task_id[rows_a])
-
-      m0      <- res_truth$agent_id == aid
-      u_truth <- if (!any(m0)) 0 else
-        sum(tid_true[res_truth$task_id[m0]], na.rm = TRUE) -
-        sum(res_truth$vcg_payment[m0])
-
-      S     <- misreport_strategy_set(true_ev[rows_a])
-      gains <- vapply(S, function(mult) {
-        rep_tasks <- tasks_all
-        rep_tasks$value_base[rows_a] <- tasks_all$value_base[rows_a] * mult
-        res <- vcg_allocate(rep_tasks, env, util_hat, blb, sm,
-                            lambda_l_default = lambda_l_default)
-        m   <- res$agent_id == aid
-        u   <- if (!any(m)) 0 else
-          sum(tid_true[res$task_id[m]], na.rm = TRUE) - sum(res$vcg_payment[m])
-        u - u_truth
-      }, numeric(1))
+      gains <- exp7_agent_gains(mechanism, tasks_all, env, aid, true_ev,
+                                util_hat, blb, sm, lambda_l_default,
+                                reserve_markup, res_truth = res_truth)
 
       red <- br_gain_reduce(gains, tol)
       if (red$max > best_gain) {
@@ -512,7 +502,7 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
       }
       round_best  <- max(round_best, red$max)
       ar_gain_sum <- ar_gain_sum + red$max
-      fallback_n  <- fallback_n + attr(S, "independent_fallback")
+      fallback_n  <- fallback_n + attr(gains, "independent_fallback")
       ar_count    <- ar_count + 1L
     }
     round_max <- c(round_max, round_best)
@@ -539,8 +529,83 @@ exp7b_run_single <- function(graph_type = c("tree", "sp", "agentic", "entangled"
     br_gain_mean = if (ar_count > 0) ar_gain_sum / ar_count else 0,
     br_gain_member_argmax     = factor(best_member),
     independent_fallback_rate = if (ar_count > 0) fallback_n / ar_count else 0,
-    greedy_exact_incidence    = if (inc_n > 0) inc_below / inc_n else NA_real_
+    greedy_exact_incidence    = if (inc_n > 0) inc_below / inc_n else NA_real_,
+    mechanism                 = mechanism
   )
+}
+
+#' One round's allocation and payments under a mechanism of the block.
+#'
+#' "vcg" is the certified greedy allocation with Clarke payments. "market" is
+#' the discovered-price market: the tatonnement clears on the REPORTED values
+#' from a fresh price vector, with the same value model the VCG arm bids with,
+#' admission is by reported surplus at the clearing prices, and every winner
+#' pays its bundle at those node prices. Because the prices are formed from
+#' the reports, an agent that withholds demand can lower the price it pays,
+#' and the block's deviation set measures that.
+#'
+#' @return A tibble of `task_id`, `agent_id`, `payment` and, for VCG,
+#'   `realised_value`; VCG's negative-externality count rides as an attribute.
+exp7_mechanism_allocate <- function(mechanism = c("vcg", "market"), tasks, env,
+                                    util_hat, blb, sm, lambda_l_default = 0.005,
+                                    reserve_markup = 1) {
+  mechanism <- match.arg(mechanism)
+  if (mechanism == "vcg") {
+    res <- vcg_allocate(tasks, env, util_hat, blb, sm,
+                        lambda_l_default = lambda_l_default)
+    out <- res
+    out$payment <- res$vcg_payment
+    return(out)
+  }
+  ms <- init_market_state(env)
+  ms$success_model <- sm
+  cl <- clear_multitier_market(tasks, env, util_hat, blb, ms,
+                               lambda_l_default = lambda_l_default,
+                               reserve_markup = reserve_markup)
+  a <- cl$allocation
+  if (nrow(a) == 0L) {
+    return(tibble(task_id = character(), agent_id = integer(),
+                  payment = numeric()))
+  }
+  A  <- task_recipes(a, env)
+  pr <- cl$clearing$prices
+  tibble(task_id  = as.character(a$task_id),
+         agent_id = as.integer(a$agent_id),
+         payment  = as.vector(A %*% pr$price[match(colnames(A), pr$tier)]))
+}
+
+#' One agent's gain from each member of the deviation set.
+#'
+#' The others report truthfully; the agent's reports are scaled by each member
+#' of misreport_strategy_set(), the mechanism reallocates on the reports, and
+#' the gain is the agent's true value of what it wins minus what it pays,
+#' against truthful reporting.
+#'
+#' @return Named numeric vector of gains, carrying the strategy set's
+#'   `independent_fallback` attribute.
+exp7_agent_gains <- function(mechanism, tasks_all, env, aid, true_ev, util_hat,
+                             blb, sm, lambda_l_default = 0.005,
+                             reserve_markup = 1, res_truth = NULL) {
+  rows_a   <- which(tasks_all$agent_id == aid)
+  tid_true <- setNames(true_ev[rows_a], tasks_all$task_id[rows_a])
+  alloc <- function(t) exp7_mechanism_allocate(mechanism, t, env, util_hat, blb,
+                                               sm, lambda_l_default,
+                                               reserve_markup)
+  util <- function(res) {
+    m <- res$agent_id == aid
+    if (!any(m)) 0 else
+      sum(tid_true[res$task_id[m]], na.rm = TRUE) - sum(res$payment[m])
+  }
+  u_truth <- util(res_truth %||% alloc(tasks_all))
+
+  S     <- misreport_strategy_set(true_ev[rows_a])
+  gains <- vapply(S, function(mult) {
+    rep_tasks <- tasks_all
+    rep_tasks$value_base[rows_a] <- tasks_all$value_base[rows_a] * mult
+    util(alloc(rep_tasks)) - u_truth
+  }, numeric(1))
+  attr(gains, "independent_fallback") <- attr(S, "independent_fallback")
+  gains
 }
 
 

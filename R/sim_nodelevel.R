@@ -3761,7 +3761,14 @@ node_exp7b_grid <- function(seeds, counts = node_agents(),
                               cap_scale = sweep_cap, seed = seeds) %>%
     mutate(operating_point = "sweep") %>%
     anti_join(first, by = c("graph_type", "N", "cap_scale", "seed"))
-  bind_rows(first, sweep[names(first)])
+  vcg <- bind_rows(first, sweep[names(first)]) %>% mutate(mechanism = "vcg")
+  # The discovered-price market under the same deviation set, at every point
+  # the VCG arm runs, once each: the laminar instances' enumerable and
+  # evaluation points coincide, and a point is one run.
+  market <- vcg %>%
+    distinct(graph_type, N, cap_scale, seed, .keep_all = TRUE) %>%
+    mutate(mechanism = "market")
+  bind_rows(vcg, market)
 }
 
 #' The joint-misreport gain per instance and operating point.
@@ -3773,8 +3780,9 @@ node_exp7b_grid <- function(seeds, counts = node_agents(),
 #'   certifier's verdict (the distinct verdicts, and whether every seed was
 #'   certified), and the greedy exactness shortfall incidence at that point,
 #'   so the gain can be read against inexactness.
-node_exp7b_summary <- function(rows, by = c("graph_type", "operating_point",
-                                            "N", "cap_scale")) {
+node_exp7b_summary <- function(rows, by = c("mechanism", "graph_type",
+                                            "operating_point", "N",
+                                            "cap_scale")) {
   df <- bind_rows(rows)
   if (!"greedy_exact_incidence" %in% names(df)) df$greedy_exact_incidence <- NA_real_
   df %>%

@@ -60,6 +60,7 @@ test_that("the pipeline runs the block over its own grid", {
 
 test_that("the sweep crosses agents with capacity, after the rows already run", {
   g <- node_exp7b_grid(1:10)
+  g <- g[g$mechanism == "vcg", ]
   expect_equal(g$operating_point[1:60], rep(c("enumerable", "evaluation"), each = 30L))
   sw <- g[g$operating_point == "sweep", ]
   expect_true(all(which(g$operating_point == "sweep") > 60L))

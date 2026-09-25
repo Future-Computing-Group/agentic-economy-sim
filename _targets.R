@@ -1184,6 +1184,7 @@ list(
         seed       = node_exp7b_param_grid$seed,
         substrate  = "node",
         cap_scale  = node_exp7b_param_grid$cap_scale,
+        mechanism  = node_exp7b_param_grid$mechanism,
         deadlines  = task_deadlines,
         lambda_l_default = node_lambda,
         n_rounds   = 30L
@@ -1200,7 +1201,8 @@ list(
   # so it is one test over one design rather than a pool of two points.
   tar_target(node_stats_exp7b,
              stat_exp7b(dplyr::filter(bind_rows(node_exp7b_results_raw),
-                                      operating_point == "enumerable"))),
+                                      operating_point == "enumerable",
+                                      mechanism == "vcg"))),
 
   # -- the measured workload on the node substrate ---------------------------
   # Both recordings are tracked as files, so a re-recording invalidates every
