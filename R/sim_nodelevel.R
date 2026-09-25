@@ -1028,6 +1028,13 @@ node_exact_pair <- function(env, tasks, ev) {
 #'                         on S), in execution and in the bid-time latency the
 #'                         agents value their tasks at. It is identically zero
 #'                         where the interface is off.
+#' @param leaf_size        Named per-leaf unit size, or NULL for unit tokens:
+#'                         a task of leaf l loads every node on its path
+#'                         leaf_size[l] times the token weight. The true
+#'                         instance charges the sizes everywhere; a contracted
+#'                         node counts exported units, so the advertised
+#'                         region is what an interface that assumed
+#'                         interchangeable units would advertise.
 #' @return A single-row tibble of summary metrics.
 node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                            "agentic"),
@@ -1058,7 +1065,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             posted_nodes = NULL,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3,
-                            enc_overhead_ms = 0) {
+                            enc_overhead_ms = 0, leaf_size = NULL) {
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
   leaf_mix   <- match.arg(leaf_mix)
@@ -1090,6 +1097,12 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   env_adv  <- scale_capacities(
     node_run_env(graph_type, load_level, N, leaf_mix, interface,
                  advertise_frac, spec = spec_used), cap_scale)
+  if (!is.null(leaf_size)) {
+    env_true <- node_apply_leaf_size(env_true, leaf_size)
+    env_adv  <- node_apply_leaf_size(
+      env_adv, leaf_size,
+      counted = setdiff(colnames(env_adv$anc), colnames(env_true$anc)))
+  }
   # Whether the advertised region is the true one or strictly inside it: a
   # property of the instance and the architecture, so it is read once, before
   # any cap or coupling is applied, and without touching the run's stream.
@@ -1850,6 +1863,62 @@ node_region_relation <- function(env_adv, env_true, n_random = 20L) {
     if (lo < 0) "outer" else "exact"
   list(relation = relation, max_gap = max(hi, 0), min_gap = min(lo, 0),
        weight = if (hi > 0) setNames(W[i, ], L) else NULL)
+}
+
+#' Give each leaf's tasks a unit size.
+#'
+#' A task of leaf l loads every node on its path `sizes[l]` times what a unit
+#' token does, except the nodes in `counted`, which count units: a contracted
+#' node exporting the cluster is advertised in exported units, so an interface
+#' that assumes them interchangeable charges every unit once whatever its size.
+#'
+#' @param env     An environment from node_env() or node_run_env().
+#' @param sizes   Named per-leaf size multipliers.
+#' @param counted Nodes that count units rather than sizes.
+#' @return The environment, its recipes scaled.
+node_apply_leaf_size <- function(env, sizes, counted = character(0)) {
+  for (l in names(env$recipes)) {
+    r <- env$recipes[[l]]
+    env$recipes[[l]] <- r * ifelse(names(r) %in% counted, 1, sizes[[l]])
+  }
+  env
+}
+
+#' The unit classes the export probe's condition (ii) is varied over.
+#'
+#' @param units "interchangeable" (unit tokens) or "two_class" (l1 and l2
+#'   carry unit tokens, l3 and l4 tokens of twice the size).
+#' @return Named per-leaf sizes, or NULL for unit tokens.
+node_unit_sizes <- function(units) {
+  switch(units,
+         interchangeable = NULL,
+         two_class = c(l1 = 1, l2 = 1, l3 = 2, l4 = 2),
+         stop("unknown unit class: ", units))
+}
+
+#' The interface block's grid.
+#'
+#' The rows the block has always run, with unit tokens, then the probe's
+#' condition (ii): on S, whose exported leaves share one ancestry so the units
+#' are interchangeable structurally, two leaf classes of different sizes, with
+#' the advertised scalar held at the inner one (condition (i) holds). The
+#' uncontracted rows are the control: a market that clears against the sizes
+#' cannot over-commit them.
+#'
+#' @param seeds Monte Carlo seeds per cell.
+#' @return A tibble with one row per branch.
+node_exp10_grid <- function(seeds) {
+  bind_rows(
+    tidyr::expand_grid(interface  = c("off", "inner", "maxflow"),
+                       graph_type = c("tree", "sp", "entangled"),
+                       leaf_mix   = c("uniform", "skewed"),
+                       seed       = seeds) %>%
+      mutate(units = "interchangeable"),
+    tidyr::expand_grid(interface  = c("off", "inner"),
+                       graph_type = "sp",
+                       leaf_mix   = c("uniform", "skewed"),
+                       seed       = seeds) %>%
+      mutate(units = "two_class"))
 }
 
 #' The leaves whose tasks cross a contracted cluster's interface.

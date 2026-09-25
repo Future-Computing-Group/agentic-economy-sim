@@ -794,18 +794,13 @@ list(
              node_overhead_summary(bind_rows(node_exp4_overhead_raw))),
 
   # -- the interface block, the node-level successor of the faithfulness arm --
-  tar_target(
-    node_exp10_param_grid,
-    tidyr::expand_grid(interface  = c("off", "inner", "maxflow"),
-                       graph_type = graph_types,
-                       # The skewed mix is where an over-stated scalar
-                       # over-commits on the exposed node (at uniform shares
-                       # that over-commitment is exactly zero, a knife-edge);
-                       # the uniform mix is the matched-load cell every other
-                       # experiment reads at. No contrast crosses mixes.
-                       leaf_mix   = c("uniform", "skewed"),
-                       seed       = seq_len(n_seeds))
-  ),
+  # The skewed mix is where an over-stated scalar over-commits on the exposed
+  # node (at uniform shares that over-commitment is exactly zero, a
+  # knife-edge); the uniform mix is the matched-load cell every other
+  # experiment reads at. No contrast crosses mixes. The rows varying the
+  # interchangeability of the exported units follow the ones that vary the
+  # advertised scalar.
+  tar_target(node_exp10_param_grid, node_exp10_grid(seq_len(n_seeds))),
   tar_target(
     node_exp10_results_raw,
     node_run_single(
@@ -815,18 +810,26 @@ list(
       N                = node_agent_counts[[node_exp10_param_grid$graph_type]],
       interface        = node_exp10_param_grid$interface,
       leaf_mix         = node_exp10_param_grid$leaf_mix,
+      leaf_size        = node_unit_sizes(node_exp10_param_grid$units),
+      # The leaf-block exact reference counts unit tokens, so it is not a
+      # reference where the tokens carry sizes.
+      exact_reference  = node_exp10_param_grid$units == "interchangeable",
       n_rounds         = n_rounds,
       deadlines        = task_deadlines,
       lambda_l_default = node_lambda
-    ),
+    ) %>% dplyr::mutate(units = node_exp10_param_grid$units),
     pattern   = map(node_exp10_param_grid),
     iteration = "vector"
   ),
   tar_target(node_exp10_summary_table,
              node_aggregate(node_exp10_results_raw,
-                            c("interface", "graph_type", "leaf_mix"))),
+                            c("units", "interface", "graph_type", "leaf_mix"))),
+  # The interface contrast is taken on the unit-token rows, one design; the
+  # condition-(ii) rows are read in the summary and the intervals.
   tar_target(node_stats_exp10,
-             node_stat_factor(bind_rows(node_exp10_results_raw), "interface",
+             node_stat_factor(dplyr::filter(bind_rows(node_exp10_results_raw),
+                                            units == "interchangeable"),
+                              "interface",
                               cell_vars = c("graph_type", "leaf_mix"))),
 
   # -- architecture x governance ---------------------------------------------
@@ -1375,7 +1378,7 @@ list(
                              "graph_type", "load_level"),
                            block = "exp6_sensitivity"),
         node_interval_rows(node_exp10_results_raw,
-                           c("interface", "graph_type", "leaf_mix"),
+                           c("units", "interface", "graph_type", "leaf_mix"),
                            block = "exp10"),
         node_interval_rows(node_exp14_sensitivity, c("parameter", "level"),
                            "median_reduction", block = "exp14"),
