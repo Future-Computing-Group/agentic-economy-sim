@@ -1035,6 +1035,12 @@ node_exact_pair <- function(env, tasks, ev) {
 #'                         node counts exported units, so the advertised
 #'                         region is what an interface that assumed
 #'                         interchangeable units would advertise.
+#' @param adapt_eta,adapt_target The demand-responsive posted price's step
+#'                         and target offered-load ratio: after each round its
+#'                         level moves by `adapt_eta` times the gap between
+#'                         the round's offered load at the most loaded node and
+#'                         the target (`node_adaptive_level()`). Only the
+#'                         `posted_price_adaptive` level reads them.
 #' @return A single-row tibble of summary metrics.
 node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                            "agentic"),
@@ -1054,7 +1060,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                                           "market_cc", "posted_price_matched",
                                           "market_posted_slice", "market_asc",
                                           "posted_price_fcfs",
-                                          "posted_price_edf"),
+                                          "posted_price_edf",
+                                          "posted_price_adaptive"),
                             p_post_k = 1,
                             advertise_frac = NULL, cap_scale = 1.0,
                             spec = NULL,
@@ -1065,7 +1072,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
                             posted_nodes = NULL,
                             alpha = 50, p = 1.2, salvage = 0.0,
                             iters = 15L, eta = price_eta, success_lr = 0.3,
-                            enc_overhead_ms = 0, leaf_size = NULL) {
+                            enc_overhead_ms = 0, leaf_size = NULL,
+                            adapt_eta = 0, adapt_target = 1) {
   graph_type <- match.arg(graph_type)
   load_level <- match.arg(load_level)
   leaf_mix   <- match.arg(leaf_mix)
@@ -1166,6 +1174,8 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   Ctok <- node_token_capacity(env)
   lb_full <- leaf_rank(anc, Ctok)[[full]]
 
+  # The demand-responsive posted price's level, re-set between rounds.
+  adapt_k   <- p_post_k
   ms        <- init_market_state(if (sliced) slices$eu else env)
   ms_ne     <- init_market_state(if (sliced) slices$non_eu else env)
   prev_util <- NULL
@@ -1247,14 +1257,16 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
           lambda_l_default = lambda_l_default, salvage = salvage))
 
       if (mechanism %in% c("posted_price", "posted_price_matched",
-                           "posted_price_fcfs", "posted_price_edf")) {
+                           "posted_price_fcfs", "posted_price_edf",
+                           "posted_price_adaptive")) {
         p_task <- if (mechanism == "posted_price_matched") {
           # One dose for every instance, so the cross-instance ordering is
           # read at equal dose rather than at each instance's own path cost.
           rep(node_matched_anchor(p_post_k), n_gen)
         } else {
           unname(posted_price_anchor_per_leaf(env, anc,
-                                              k = p_post_k)[
+                                              k = if (mechanism == "posted_price_adaptive")
+                                                adapt_k else p_post_k)[
                                                 as.character(tasks_all$recipe)])
         }
         # The arrival-order and deadline levels are the same mechanism under
@@ -1264,6 +1276,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
         allocation   <- posted_price_allocate(
           tasks_all, env, scores, p_task,
           order = switch(mechanism, posted_price_fcfs = "arrival",
+                         posted_price_adaptive = "arrival",
                          posted_price_edf = "deadline", "value"),
           arrival = node_arrival_order(n_gen, seed, t))
         # The price is what agents face whether or not they take it, so it is
@@ -1313,6 +1326,10 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     }
     if (policy == "role") {
       allocation <- node_role_admission(allocation, agents, env)
+    }
+    if (mechanism == "posted_price_adaptive") {
+      adapt_k <- node_adaptive_level(adapt_k, node_offered_ratio(tasks_all, env),
+                                     adapt_eta, adapt_target)
     }
     priceCvV[t] <- cross_leaf_price_cv(prices, anc)
 
@@ -1541,8 +1558,42 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     # projection or strictly inside it, and the largest relative shortfall of
     # the advertised optimum over the weight grid.
     region_relation            = region$relation,
-    region_max_gap             = region$max_gap
+    region_max_gap             = region$max_gap,
+    adapt_eta                  = as.numeric(adapt_eta),
+    adapt_target               = as.numeric(adapt_target)
   )
+}
+
+#' The demand-responsive posted price's next level.
+#'
+#' p_{t+1} = p_t (1 + eta (rho_t - rho*)): up after a round whose offered load
+#' exceeded the target, down after one below it. The level is a multiplier on
+#' each leaf's path cost at the per-node reserve, so a floor of one is the
+#' reserve itself.
+#'
+#' @param k      The current level.
+#' @param rho    The round's offered load at its most loaded node.
+#' @param eta    Step.
+#' @param target Target offered-load ratio.
+#' @return The next level.
+node_adaptive_level <- function(k, rho, eta, target) {
+  max(1, k * (1 + eta * (rho - target)))
+}
+
+#' The round's offered load at its most loaded node.
+#'
+#' Every generated task's recipe against the node capacities, admitted or
+#' not: the demand an operator observes at its own nodes, which is what a
+#' posted price can respond to without reading any value.
+#'
+#' @param tasks The round's tasks.
+#' @param env   The environment the round cleared over.
+#' @return The largest offered-to-capacity ratio over the nodes.
+node_offered_ratio <- function(tasks, env) {
+  if (nrow(tasks) == 0L) return(0)
+  used <- colSums(task_recipes(tasks, env))
+  cap  <- tier_capacities(env)
+  max(used / cap$capacity[match(names(used), cap$tier)], na.rm = TRUE)
 }
 
 
@@ -2346,7 +2397,14 @@ node_tuning_grid <- function(seeds) {
     # The deadline-priority arm over the same levels, appended after it.
     tidyr::expand_grid(mechanism = "posted_price_edf",
                        p_post_k = node_tuning_posted_levels(),
-                       reserve_markup = 1))
+                       reserve_markup = 1),
+    # The demand-responsive posted price starts at the reserve and is tuned
+    # over its step and target instead of a level. Appended last.
+    tidyr::expand_grid(mechanism = "posted_price_adaptive", p_post_k = 1,
+                       reserve_markup = 1, adapt_eta = c(0.05, 0.1, 0.2),
+                       adapt_target = c(0.8, 0.9, 1.0))) %>%
+    mutate(adapt_eta    = dplyr::coalesce(adapt_eta, 0),
+           adapt_target = dplyr::coalesce(adapt_target, 1))
   tidyr::expand_grid(
     arms,
     graph_type   = c("tree", "sp", "entangled"),
@@ -2372,9 +2430,10 @@ node_eval_grid <- function(tuning_raw, seeds,
                              c("graph_type", "load_level", "architecture",
                                "congestion"), names(tuning_raw)),
                            fixed = c("greedy_ev", "k8s")) {
+  extra <- intersect(c("adapt_eta", "adapt_target"), names(tuning_raw))
   knobs <- tuning_raw %>%
     group_by(across(all_of(c(cell_vars, "mechanism", "p_post_k",
-                             "reserve_markup")))) %>%
+                             "reserve_markup", extra)))) %>%
     summarise(tuning_welfare = mean(welfare, na.rm = TRUE), .groups = "drop") %>%
     group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
     # The summary above comes back ordered by the knob, so on a tie this takes
@@ -2386,6 +2445,10 @@ node_eval_grid <- function(tuning_raw, seeds,
                              mechanism = fixed, p_post_k = 1,
                              reserve_markup = 1)
   out <- tidyr::expand_grid(bind_rows(knobs, rest), seed = seeds)
+  if ("adapt_eta" %in% names(out)) {
+    out <- mutate(out, adapt_eta = dplyr::coalesce(adapt_eta, 0),
+                  adapt_target = dplyr::coalesce(adapt_target, 1))
+  }
   # The level names the queue term every row runs at, so a row can never
   # carry a setting its own level does not name.
   if ("congestion" %in% names(out)) {
@@ -2587,6 +2650,18 @@ node_tuned_table <- function(eval_raw, tuning_raw = NULL,
                                                     reserve_markup))
   tuned$knob_flat <- node_knob_flat(tuned, tuning_raw, cell_vars)
   if (!has_ceiling) tuned$welfare_over_ceiling <- NULL
+  # The demand-responsive arm is tuned over two knobs, a step and a target,
+  # which the one-knob boundary and flatness reads do not describe.
+  ad <- tuned$mechanism == "posted_price_adaptive"
+  tuned$knob_at_boundary[ad] <- NA
+  tuned$knob_flat[ad] <- NA
+  if ("adapt_eta" %in% names(eval_raw)) {
+    knob <- eval_raw %>%
+      group_by(across(all_of(c(cell_vars, "mechanism")))) %>%
+      summarise(adapt_eta = .one_of(adapt_eta),
+                adapt_target = .one_of(adapt_target), .groups = "drop")
+    tuned <- left_join(tuned, knob, by = c(cell_vars, "mechanism"))
+  }
   dplyr::relocate(tuned, alloc_ratio_true, dplyr::any_of("welfare_over_ceiling"),
                   .after = knob_flat)
 }

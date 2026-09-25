@@ -85,7 +85,7 @@ test_that("the tuning grid gives each mechanism one knob and no other freedom", 
   g <- node_tuning_grid(c(1L, 2L))
   expect_setequal(unique(g$mechanism),
                   c("posted_price", "posted_price_fcfs", "posted_price_edf",
-                    "market", "market_cc"))
+                    "posted_price_adaptive", "market", "market_cc"))
   for (m in c("posted_price", "posted_price_fcfs", "posted_price_edf")) {
     expect_setequal(unique(g$p_post_k[g$mechanism == m]),
                     node_tuning_posted_levels())
@@ -96,10 +96,11 @@ test_that("the tuning grid gives each mechanism one knob and no other freedom", 
                   node_reserve_markups())
   # Twelve cells: three instances, two loads, two architectures; each at both
   # congestion levels. Three posted disciplines over the posted levels, two
-  # market arms over the reserve markups.
+  # market arms over the reserve markups, and the demand-responsive posted
+  # price over its nine (step, target) pairs.
   expect_equal(nrow(g),
                (3 * length(node_tuning_posted_levels()) +
-                  2 * length(node_reserve_markups())) * 12 * 2 * 2)
+                  2 * length(node_reserve_markups()) + 9) * 12 * 2 * 2)
 })
 
 # A tuning frame whose argmax is known by construction: the posted price peaks

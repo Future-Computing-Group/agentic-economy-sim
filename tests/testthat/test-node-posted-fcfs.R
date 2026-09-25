@@ -284,7 +284,8 @@ test_that("the deadline arm is tuned, gridded and labelled like the other posted
   # Appended after the value-ranked, market and arrival-order blocks.
   old <- (2 * length(node_tuning_posted_levels()) +
             2 * length(node_reserve_markups())) * 12 * 2 * 2
-  expect_setequal(unique(tg$mechanism[(old + 1L):nrow(tg)]), "posted_price_edf")
+  n_edf <- sum(tg$mechanism == "posted_price_edf")
+  expect_setequal(unique(tg$mechanism[old + seq_len(n_edf)]), "posted_price_edf")
 
   mg <- node_exp6_mechanism_grid(n_seeds = 10L)
   expect_setequal(unique(mg$p_post_k[mg$mechanism == "posted_price_edf"]),
