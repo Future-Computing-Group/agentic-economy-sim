@@ -2,7 +2,7 @@
   "upload_type": "software",
   "title": "Simulation code for \"Agentic Service Markets Across the Computing Continuum: A Polymatroidal Architecture\"",
   "version": "v2.1.0",
-  "description": "R + targets pipeline reproducing the experiments in the arXiv preprint arXiv:2603.05614, \"Agentic Service Markets Across the Computing Continuum: A Polymatroidal Architecture\": the topology x load ablation grid, the DSIC strategic-bidding test, a measured agentic LLM workload, and the integrator faithfulness and encapsulation-overhead studies. Reproduce all results with targets::tar_make().",
+  "description": "R + targets pipeline reproducing the experiments of the arXiv preprint arXiv:2603.05614, \"Agentic Service Markets Across the Computing Continuum: A Polymatroidal Architecture\". It runs an agentic service market on a node-level dependency substrate (a tree, the tree plus one crossing arc, and a laminar parallel fan) at a testbed-calibrated congestion level, and measures that a crossing in the leaf-block family costs allocative exactness and truthfulness while clearing prices exist on totally unimodular families, that an integrator's inner exposure restores exactness at a volume cost, and that laminarity does not order price stability. Reference optima, truth-assuming planners and cross-domain mechanisms (the discovered-price market and arrival-order and deadline-priority posted prices) are compared on held-out seeds, beside a crossing sweep, a contention sweep of joint misreports, a measured LLM agent workload and a container testbed that replays the market's allocations. Reproduce all results with targets::tar_make().",
   "license": "MIT",
   "access_right": "open",
   "creators": [
