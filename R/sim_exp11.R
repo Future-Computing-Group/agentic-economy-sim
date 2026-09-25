@@ -409,3 +409,105 @@ exp11_inner_exposure_control <- function() {
     forgone              = opt - c(sum(raw_x), sum(inner_x))
   )
 }
+
+
+# ===========================================================================
+# Proportional recipes within one sharing component, simulated
+# ===========================================================================
+
+#' Two recipes proportional but unequal within one sharing component.
+#'
+#' B = lambda_2 * A on every tier, so the pair is one resource-decomposable
+#' component and part (iii) of the catalogue proposition applies with sizes
+#' lambda_1 = 1 and lambda_2.
+#'
+#' @param lambda_2 The heavy recipe's size.
+#' @return A named list of named numeric vectors.
+exp11_proportional_catalogue <- function(lambda_2) {
+  a <- c(device = 1, edge = 1, cloud = 1)
+  list(A = a, B = lambda_2 * a)
+}
+
+#' The catalogue interface's advertised region as a packing environment.
+#'
+#' Each slice's own bound and the joint count, in task units: x_A <= kappa,
+#' x_B <= floor(kappa / lambda_2), x_A + x_B <= kappa. This is the region the
+#' interface admits against; delivery charges the recipes' sizes.
+#'
+#' @param lambda_2 The heavy recipe's size.
+#' @param kappa    Internal capacity in light-recipe units.
+#' @return An environment list the shared packing kernel reads.
+.exp11_catalogue_env <- function(lambda_2, kappa) {
+  tiers <- c("A_bound", "B_bound", "joint")
+  list(demand_weights = tibble(tier = tiers, demand_weight = c(0, 0, 1)),
+       capacities = tibble(tier = tiers,
+                           capacity = c(kappa, floor(kappa / lambda_2), kappa)),
+       recipes = list(A = c(A_bound = 1, B_bound = 0, joint = 1),
+                      B = c(A_bound = 0, B_bound = 1, joint = 1)))
+}
+
+#' One seed of the proportional arm.
+#'
+#' Each round offers a Poisson number of tasks with the simulator's value model
+#' (uniform base values on [1, 2]); each round's share of heavy tasks is drawn
+#' uniform on [0, 1], so the stream visits every mix and in particular the
+#' heavy-dominated rounds where value-greedy reaches the advertised region's
+#' extreme point. The tier arms' parity rule would pin the mix at one half
+#' instead, and a region's maximum is not read off one mix. Admission is
+#' value-greedy on the catalogue interface's advertised region; the factor of a
+#' round is the admitted recipes' delivered load over the internal capacity.
+#' kappa = 60 makes kappa / lambda_2 an integer at every swept size, so the
+#' integral admission can reach the closed form exactly.
+#'
+#' @param lambda_2 The heavy recipe's size.
+#' @param kappa    Internal capacity in light-recipe units.
+#' @param seed     Random seed.
+#' @param n_rounds Rounds.
+#' @param offered  Mean tasks offered per round.
+#' @return A one-row tibble: the predicted factor, the largest and the mean
+#'   measured factor over rounds whose joint count binds, and their number.
+exp11_proportional_run <- function(lambda_2, kappa = 60, seed = 1L,
+                                   n_rounds = 200L, offered = 2 * kappa) {
+  env  <- .exp11_catalogue_env(lambda_2, kappa)
+  size <- c(A = 1, B = lambda_2)
+  fac  <- rep(NA_real_, n_rounds)
+  for (t in seq_len(n_rounds)) {
+    set.seed(seed * 1009L + t)
+    n     <- stats::rpois(1L, offered)
+    share <- stats::runif(1L)
+    tasks <- tibble(task_id = sprintf("t%03d", seq_len(n)),
+                    value_base = stats::runif(n, 1, 2),
+                    recipe = ifelse(stats::runif(n) < share, "B", "A"))
+    chosen <- .greedy_pack_by(tasks$value_base, tasks, env)
+    if (length(chosen) == kappa) {
+      fac[t] <- sum(size[tasks$recipe[chosen]]) / kappa
+    }
+  }
+  bind <- fac[is.finite(fac)]
+  tibble(lambda_2 = lambda_2, kappa = kappa, seed = seed,
+         rho_predicted     = 2 - 1 / lambda_2,
+         rho_measured_max  = if (length(bind)) max(bind) else NA_real_,
+         rho_measured_mean = if (length(bind)) mean(bind) else NA_real_,
+         binding_rounds    = length(bind))
+}
+
+#' The proportional arm over its sizes and seeds.
+#'
+#' @param lambda_2 Heavy-recipe sizes, the closed-form sweep's own.
+#' @param seeds    Seeds.
+#' @param ...      Passed to exp11_proportional_run().
+#' @return One row per size: the predicted factor, the largest measured factor
+#'   over every seed's binding rounds, and the mean.
+exp11_proportional_table <- function(lambda_2 = c(1, 1.25, 1.5, 2, 4),
+                                     seeds = 1:10, ...) {
+  rows <- purrr::map_dfr(lambda_2, function(l2) purrr::map_dfr(seeds, function(s)
+    exp11_proportional_run(l2, seed = s, ...)))
+  rows %>%
+    group_by(lambda_2) %>%
+    summarise(rho_predicted     = rho_predicted[[1]],
+              rho_measured_max  = max(rho_measured_max, na.rm = TRUE),
+              rho_measured_mean = mean(rho_measured_mean, na.rm = TRUE),
+              binding_rounds    = sum(binding_rounds),
+              n_seeds           = dplyr::n_distinct(seed),
+              .groups = "drop")
+}

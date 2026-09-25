@@ -516,6 +516,11 @@ list(
   # cost nothing, so they are targets rather than prose.
   tar_target(exp11_overcommitment_table, exp11_overcommitment_sweep()),
   tar_target(exp11_inner_exposure_table, exp11_inner_exposure_control()),
+  # Part (iii) simulated rather than tabulated: two recipes proportional but
+  # unequal within one sharing component, admitted against the catalogue
+  # interface and charged their sizes, over the closed-form sweep's sizes.
+  tar_target(exp11_proportional_table,
+             exp11_proportional_table(seeds = seq_len(n_seeds))),
 
   # ===========================================================================
   # Experiment 12: Encapsulation overhead (hybrid, enc_overhead_ms swept)

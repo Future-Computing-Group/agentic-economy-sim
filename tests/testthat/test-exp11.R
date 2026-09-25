@@ -328,3 +328,41 @@ test_that("stat_exp11 stratifies by capacity", {
   # ... and it still contributes to the single machine-written statistics dump.
   expect_gt(nrow(make_stats_report(list(exp11 = st))), 0L)
 })
+
+# ---- proportional recipes, simulated ----------------------------------------
+#
+# Part (iii) of the catalogue proposition: two recipes proportional but unequal
+# within one sharing component, B = lambda_2 * A. The catalogue interface
+# advertises each slice's own bound and the joint count; delivery charges the
+# sizes. The factor is measured on a simulated demand stream rather than
+# computed at the extreme point.
+
+test_that("at lambda_2 = 1 the measured factor is 1", {
+  r <- exp11_proportional_run(lambda_2 = 1, seed = 1L, n_rounds = 20L)
+  expect_equal(r$rho_measured_max, 1)
+  expect_equal(r$rho_predicted, 1)
+})
+
+test_that("the simulated factor reaches the predicted one and never exceeds it", {
+  for (l2 in c(1.25, 1.5, 2, 4)) {
+    r <- exp11_proportional_run(lambda_2 = l2, seed = 2L, n_rounds = 20L)
+    expect_equal(r$rho_predicted, 2 - 1 / l2, info = l2)
+    expect_equal(r$rho_measured_max, r$rho_predicted, tolerance = 1e-12, info = l2)
+    expect_lte(r$rho_measured_mean, r$rho_predicted + 1e-12)
+    expect_gt(r$binding_rounds, 0)
+  }
+})
+
+test_that("the recipes are one sharing component", {
+  cat_ <- exp11_proportional_catalogue(2)
+  expect_equal(unname(cat_$B / cat_$A), rep(2, 3))
+})
+
+test_that("the proportional arm is its own table beside the existing ones", {
+  tb <- exp11_proportional_table(lambda_2 = c(1, 2), seeds = 1:2, n_rounds = 5L)
+  expect_equal(nrow(tb), 2L)
+  expect_true(all(c("lambda_2", "rho_predicted", "rho_measured_max",
+                    "rho_measured_mean", "n_seeds") %in% names(tb)))
+  src <- paste(readLines(here::here("_targets.R")), collapse = "\n")
+  expect_true(grepl("tar_target(exp11_proportional_table,", src, fixed = TRUE))
+})
