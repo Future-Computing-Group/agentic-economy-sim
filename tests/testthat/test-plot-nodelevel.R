@@ -150,11 +150,35 @@ test_that("no plotted value carries a store-internal arm or instance string", {
   }
 })
 
-test_that("the instances print as T, S and X in that order", {
-  p <- make_node_exp1_tufte(node_stub(load_level = c("low", "medium", "high")))
+test_that("the instances print as T, S and X in the figures that share the helper", {
+  p <- make_node_exp2_tufte(node_stub(load_level = c("medium", "high"),
+                                      N = c(10, 60, 200)))
   inst <- patch_plots(p)[[1]]$data$instance
   expect_s3_class(inst, "factor")
   expect_equal(levels(inst), c("T", "S", "X"))
+})
+
+test_that("the structure figure orders the instances T, X, S, as its table does", {
+  p <- make_node_exp1_tufte(node_stub(load_level = c("low", "medium", "high")))
+  for (q in patch_plots(p)) {
+    if (is.null(q$labels$y)) next
+    expect_equal(levels(q$data$instance), c("T", "X", "S"))
+  }
+})
+
+test_that("the structure figure's interval bars are not hidden under the markers", {
+  p <- make_node_exp1_tufte(node_stub(load_level = c("low", "medium", "high")))
+  for (q in patch_plots(p)) {
+    if (is.null(q$labels$y)) next
+    geoms <- vapply(q$layers, function(l) class(l$geom)[1], character(1))
+    # drawn after the points, so above them
+    expect_gt(max(which(geoms == "GeomErrorbar")), max(which(geoms == "GeomPoint")))
+    b <- ggplot2::ggplot_build(q)
+    pt <- b$data[[which(geoms == "GeomPoint")[1]]]
+    eb <- b$data[[which(geoms == "GeomErrorbar")[1]]]
+    # and beside them: no bar shares its marker's x position
+    expect_true(all(abs(sort(eb$x) - sort(pt$x)) > 0.03))
+  }
 })
 
 test_that("the structure figure draws shortfall, allocative ratio and latency", {

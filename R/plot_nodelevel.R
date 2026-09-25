@@ -87,9 +87,9 @@ shape_arm_node    <- function() c(15:19, 8, 20)
 #'
 #' @param df A node-level results frame carrying `graph_type`.
 #' @return The frame with an added `instance` factor.
-node_instance_col <- function(df) {
+node_instance_col <- function(df, order = names(node_instance_names)) {
   dplyr::mutate(df, instance = factor(node_instance_names[as.character(graph_type)],
-                                      levels = unname(node_instance_names)))
+                                      levels = unname(node_instance_names[order])))
 }
 
 #' Label a column from a name map, keeping the map's order as factor levels.
@@ -186,22 +186,43 @@ node_load2 <- function(x) factor(as.character(x), levels = c("medium", "high"))
 #' point carries the Student t 95% interval over the seeds. Drop rate and
 #' admitted volume are tabulated rather than drawn.
 #'
+#' The instances read T, X, S, the order of the table the figure sits beside.
+#' The loads are dodged apart and each interval is drawn as a bar just right of
+#' its own marker and after it: most intervals are shorter than a marker, and a
+#' bar centred under its marker is hidden by it. The base size keeps every text
+#' at or above 6.5 pt when the 5.4 in wide figure is set at the 3.5 in column
+#' width (12.5 x 0.82 x 3.5 / 5.4 = 6.6 pt for the smallest).
+#'
 #' @param raw_df Per-seed rows from node_exp1_results_raw.
 #' @return A patchwork of three panels.
 make_node_exp1_tufte <- function(raw_df) {
-  df <- node_plot_ci(node_instance_col(dplyr::bind_rows(raw_df)),
+  df <- node_plot_ci(node_instance_col(dplyr::bind_rows(raw_df),
+                                       c("tree", "entangled", "sp")),
                      c("instance", "load_level"),
                      c("greedy_exact_incidence", "alloc_ratio_true",
                        "median_latency"), ci = mean_ci_t)
   df$load_level <- factor(as.character(df$load_level),
                           levels = c("low", "medium", "high"))
-  base_aes <- aes(x = instance, colour = load_level, linetype = load_level,
-                  group = load_level)
-  pan <- function(y, lab, pct = FALSE)
-    node_panel(df, base_aes, y, lab, pct = pct, dodge_w = 0.18, base = 12,
-               ci_linetype = "solid") +
+  dodge <- c(low = -0.2, medium = 0, high = 0.2)
+  df$x_pt <- as.numeric(df$instance) + dodge[as.character(df$load_level)]
+  df$x_ci <- df$x_pt + 0.07
+  pan <- function(y, lab) {
+    m <- paste0(y, "_mean"); lo <- paste0(y, "_lo"); hi <- paste0(y, "_hi")
+    ggplot(df, aes(colour = load_level, linetype = load_level,
+                   group = load_level)) +
+      geom_line(aes(x = x_pt, y = .data[[m]]), linewidth = 0.45, na.rm = TRUE) +
+      geom_point(aes(x = x_pt, y = .data[[m]]), size = 1.2, na.rm = TRUE) +
+      geom_errorbar(aes(x = x_ci, ymin = .data[[lo]], ymax = .data[[hi]]),
+                    width = 0, linewidth = 0.4, linetype = "solid",
+                    na.rm = TRUE) +
+      scale_x_continuous(breaks = seq_along(levels(df$instance)),
+                         labels = levels(df$instance),
+                         expand = ggplot2::expansion(add = 0.35)) +
+      labs(x = NULL, y = lab) +
+      theme_tufte_ieee(base_size = 12.5) +
       scale_colour_manual(values = palette_load_tufte, name = "Load") +
       scale_linetype_manual(values = linetype_load, name = "Load")
+  }
 
   # The shortfall axis starts at zero, so the laminar instances' structural
   # zeros sit on it as flat marks and the crossing instance reads against it.
