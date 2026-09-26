@@ -1572,12 +1572,12 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
 #' The steps the demand-responsive posted price is tuned over.
 #'
 #' A fixed level the arm settles at is reached in roughly 1 / eta rounds, so
-#' the steps span settling in a few rounds (0.4) to a few tens (0.05), all
-#' inside the post-burn-in window of a 200-round run. The three original
-#' steps are kept exactly, so their runs stay the runs already made.
+#' the steps span settling in a few rounds (0.4) to about a hundred (0.01),
+#' the slowest still settling inside a 200-round run. Earlier steps are kept
+#' exactly, so their runs stay the runs already made.
 #'
 #' @return Numeric vector.
-node_adaptive_etas <- function() c(0.05, 0.1, 0.2, 0.4)
+node_adaptive_etas <- function() c(0.01, 0.02, 0.05, 0.1, 0.2, 0.4)
 
 #' The targets the demand-responsive posted price is tuned over.
 #'
@@ -1585,12 +1585,12 @@ node_adaptive_etas <- function() c(0.05, 0.1, 0.2, 0.4)
 #' most loaded node's capacity, that the level settles at. Below one the
 #' level settles where the demand it screens in leaves slack, which is where
 #' the queue a full node builds costs more than the tokens it adds; above one
-#' it settles where the packer rations. The span reaches half of capacity and
-#' half again over it, so a tuned target inside it is an optimum of the rule
-#' rather than of the grid. The three original targets are kept exactly.
+#' it settles where the packer rations. The span reaches from half of capacity
+#' to twice it, so a tuned target inside it is an optimum of the rule. Earlier
+#' targets are kept exactly.
 #'
 #' @return Numeric vector.
-node_adaptive_targets <- function() c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5)
+node_adaptive_targets <- function() c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0)
 
 #' The demand-responsive posted price's next level.
 #'

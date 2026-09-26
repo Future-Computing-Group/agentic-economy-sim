@@ -87,11 +87,11 @@ test_that("every winner pays the posted level", {
 test_that("the arm is tuned over its step and target and reported in the tuned table", {
   g <- node_tuning_grid(c(1L, 2L))
   ad <- g[g$mechanism == "posted_price_adaptive", ]
-  expect_setequal(unique(ad$adapt_eta), c(0.05, 0.1, 0.2, 0.4))
+  expect_setequal(unique(ad$adapt_eta), c(0.01, 0.02, 0.05, 0.1, 0.2, 0.4))
   expect_setequal(unique(ad$adapt_target),
-                  c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5))
-  # Thirty-six (step, target) pairs in each of the 48 cell x seed x level rows.
-  expect_equal(nrow(ad), 36L * 12L * 2L * 2L)
+                  c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0))
+  # Sixty (step, target) pairs in each of the 48 cell x seed x level rows.
+  expect_equal(nrow(ad), 60L * 12L * 2L * 2L)
   expect_true(all(which(g$mechanism == "posted_price_adaptive") >
                     max(which(g$mechanism != "posted_price_adaptive"))))
   # Not in the frontier grid: it has no single level.
@@ -145,10 +145,12 @@ test_that("the boundary flag reads the edge of the (step, target) grid", {
     "posted_price_adaptive", 1, 1, adapt_eta = eta, adapt_target = target)
   expect_false(b(0.1, 1.0))
   expect_false(b(0.2, 0.7))
-  expect_true(b(0.05, 1.0))
+  expect_false(b(0.05, 1.0))
+  expect_true(b(0.01, 1.0))
   expect_true(b(0.4, 1.0))
   expect_true(b(0.1, 0.5))
-  expect_true(b(0.1, 1.5))
+  expect_false(b(0.1, 1.5))
+  expect_true(b(0.1, 2.0))
   # the other arms are read as before
   expect_true(node_knob_at_boundary("posted_price_fcfs", 4, 1))
   expect_false(node_knob_at_boundary("market", 1, 1.5))

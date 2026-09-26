@@ -97,10 +97,10 @@ test_that("the tuning grid gives each mechanism one knob and no other freedom", 
   # Twelve cells: three instances, two loads, two architectures; each at both
   # congestion levels. Three posted disciplines over the posted levels, two
   # market arms over the reserve markups, and the demand-responsive posted
-  # price over its thirty-six (step, target) pairs.
+  # price over its sixty (step, target) pairs.
   expect_equal(nrow(g),
                (3 * length(node_tuning_posted_levels()) +
-                  2 * length(node_reserve_markups()) + 36) * 12 * 2 * 2)
+                  2 * length(node_reserve_markups()) + 60) * 12 * 2 * 2)
 })
 
 # A tuning frame whose argmax is known by construction: the posted price peaks
