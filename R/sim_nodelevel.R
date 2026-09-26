@@ -1036,10 +1036,11 @@ node_exact_pair <- function(env, tasks, ev) {
 #'                         region is what an interface that assumed
 #'                         interchangeable units would advertise.
 #' @param adapt_eta,adapt_target The demand-responsive posted price's step
-#'                         and target offered-load ratio: after each round its
-#'                         level moves by `adapt_eta` times the gap between
-#'                         the round's offered load at the most loaded node and
-#'                         the target (`node_adaptive_level()`). Only the
+#'                         and target demand ratio: after each round its level
+#'                         moves by `adapt_eta` times the gap between the
+#'                         round's demand at that level (the tokens that clear
+#'                         it, `node_screened_ratio()`) at the most loaded node
+#'                         and the target (`node_adaptive_level()`). Only the
 #'                         `posted_price_adaptive` level reads them.
 #' @return A single-row tibble of summary metrics.
 node_run_single <- function(graph_type = c("tree", "sp", "entangled",
@@ -1285,6 +1286,13 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
         # A posted price passes through no filter, so what the agent faces and
         # what the operator posted are one series.
         clearedCostV[t] <- unitCostV[t]
+        # The demand-responsive level reacts to the demand AT its own price:
+        # the tokens of this round's tasks that clear it, against capacity.
+        if (mechanism == "posted_price_adaptive") {
+          adapt_k <- node_adaptive_level(
+            adapt_k, node_screened_ratio(tasks_all, env, scores, p_task),
+            adapt_eta, adapt_target)
+        }
       } else {
         allocation   <- pack_tasks_greedy(tasks_all, scores, env)
         unitCostV[t] <- NA_real_
@@ -1327,10 +1335,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
     if (policy == "role") {
       allocation <- node_role_admission(allocation, agents, env)
     }
-    if (mechanism == "posted_price_adaptive") {
-      adapt_k <- node_adaptive_level(adapt_k, node_offered_ratio(tasks_all, env),
-                                     adapt_eta, adapt_target)
-    }
+
     priceCvV[t] <- cross_leaf_price_cv(prices, anc)
 
     # Executed against the TRUE instance: an advertised scalar the internal
@@ -1572,7 +1577,7 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
 #' reserve itself.
 #'
 #' @param k      The current level.
-#' @param rho    The round's offered load at its most loaded node.
+#' @param rho    The round's screened demand at its most loaded node.
 #' @param eta    Step.
 #' @param target Target offered-load ratio.
 #' @return The next level.
@@ -1580,18 +1585,25 @@ node_adaptive_level <- function(k, rho, eta, target) {
   max(1, k * (1 + eta * (rho - target)))
 }
 
-#' The round's offered load at its most loaded node.
+#' The demand at the posted level, at the most loaded node.
 #'
-#' Every generated task's recipe against the node capacities, admitted or
-#' not: the demand an operator observes at its own nodes, which is what a
-#' posted price can respond to without reading any value.
+#' The tokens of the round's tasks whose expected value clears their posted
+#' price, which is the set the screen admits to the packer, against the node
+#' capacities, as the packer counts them: the demand an operator observes at
+#' its own price. Demand priced out by the level is not demand at it, so a
+#' level that is too high sees a low ratio and comes down; counting every
+#' generated task instead would read over-demand at any level and ratchet the
+#' price up.
 #'
-#' @param tasks The round's tasks.
-#' @param env   The environment the round cleared over.
-#' @return The largest offered-to-capacity ratio over the nodes.
-node_offered_ratio <- function(tasks, env) {
-  if (nrow(tasks) == 0L) return(0)
-  used <- colSums(task_recipes(tasks, env))
+#' @param tasks  The round's tasks.
+#' @param env    The environment the round cleared over.
+#' @param ev     Per-task expected value, the screen's input.
+#' @param p_task Per-task posted price.
+#' @return The largest screened-demand-to-capacity ratio over the nodes.
+node_screened_ratio <- function(tasks, env, ev, p_task) {
+  keep <- is.finite(ev) & ev > p_task
+  if (!any(keep)) return(0)
+  used <- colSums(task_recipes(tasks[keep, , drop = FALSE], env))
   cap  <- tier_capacities(env)
   max(used / cap$capacity[match(names(used), cap$tier)], na.rm = TRUE)
 }
@@ -2398,11 +2410,13 @@ node_tuning_grid <- function(seeds) {
     tidyr::expand_grid(mechanism = "posted_price_edf",
                        p_post_k = node_tuning_posted_levels(),
                        reserve_markup = 1),
-    # The demand-responsive posted price starts at the reserve and is tuned
-    # over its step and target instead of a level. Appended last.
+    # The demand-responsive posted price is tuned over its step and target
+    # instead of a level. It starts at the reserve: the arrival-order arm's
+    # tuned level is chosen in the same grid, so it is not available when this
+    # one is tuned. Appended last.
     tidyr::expand_grid(mechanism = "posted_price_adaptive", p_post_k = 1,
                        reserve_markup = 1, adapt_eta = c(0.05, 0.1, 0.2),
-                       adapt_target = c(0.8, 0.9, 1.0))) %>%
+                       adapt_target = c(0.9, 1.0, 1.1))) %>%
     mutate(adapt_eta    = dplyr::coalesce(adapt_eta, 0),
            adapt_target = dplyr::coalesce(adapt_target, 1))
   tidyr::expand_grid(

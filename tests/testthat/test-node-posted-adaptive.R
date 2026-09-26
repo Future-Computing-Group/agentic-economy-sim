@@ -15,14 +15,44 @@ test_that("the level rises after an over-demanded round and falls after an under
   expect_equal(node_adaptive_level(1.02, rho = 0, eta = 0.2, target = 1), 1)
 })
 
-test_that("the offered load is read at the most loaded node", {
+test_that("the signal is the demand that clears the posted level, at the most loaded node", {
   env <- node_run_env("tree", "high", 90L, "uniform", "off")
   tasks <- tibble::tibble(task_id = sprintf("t%02d", 1:30), agent_id = 1L,
                           deadline = 1000, value_base = 1.5, recipe = "l2")
-  rho <- node_offered_ratio(tasks, env)
+  ev <- c(rep(1, 20), rep(0.1, 10))
+  p  <- rep(0.5, 30)
+  rho <- node_screened_ratio(tasks, env, ev, p)
   Ctok <- node_token_capacity(env)
-  # thirty tokens at l2 load l2 (50), e1 (50) and d (100)
-  expect_equal(rho, 30 / min(Ctok[c("l2", "e1", "d")]))
+  # twenty screened tokens at l2 load l2 (50), e1 (50) and d (100); the ten
+  # priced out are not demand at this level
+  expect_equal(rho, 20 / min(Ctok[c("l2", "e1", "d")]))
+  expect_equal(node_screened_ratio(tasks, env, ev, rep(2, 30)), 0)
+})
+
+test_that("screened demand above the target raises the level and below it lowers it", {
+  env <- node_run_env("tree", "high", 90L, "uniform", "off")
+  cap <- min(node_token_capacity(env)[c("l2", "e1", "d")])
+  mk <- function(n) tibble::tibble(task_id = sprintf("t%03d", seq_len(n)),
+                                   agent_id = 1L, deadline = 1000,
+                                   value_base = 1.5, recipe = "l2")
+  hi <- node_screened_ratio(mk(2 * cap), env, rep(1, 2 * cap), rep(0.5, 2 * cap))
+  lo <- node_screened_ratio(mk(cap / 2), env, rep(1, cap / 2), rep(0.5, cap / 2))
+  expect_gt(node_adaptive_level(1.4, hi, eta = 0.1, target = 1), 1.4)
+  expect_lt(node_adaptive_level(1.4, lo, eta = 0.1, target = 1), 1.4)
+})
+
+test_that("under a steady demand the level settles instead of diverging", {
+  # A demand curve at the current level: the screened demand falls as the
+  # level rises, as it does when a higher price screens out more tasks.
+  demand <- function(k) 1.5 / k
+  for (eta in c(0.05, 0.1, 0.2)) for (target in c(0.9, 1.0, 1.1)) {
+    k <- 1
+    path <- numeric(200)
+    for (t in 1:200) { k <- node_adaptive_level(k, demand(k), eta, target); path[t] <- k }
+    tail <- path[151:200]
+    expect_lt(diff(range(tail)), 0.01, label = sprintf("band at eta %g target %g", eta, target))
+    expect_equal(tail[[50]], 1.5 / target, tolerance = 0.01)
+  }
 })
 
 test_that("with a zero step it is the arrival-order posted price at its starting level", {
@@ -58,7 +88,7 @@ test_that("the arm is tuned over its step and target and reported in the tuned t
   g <- node_tuning_grid(c(1L, 2L))
   ad <- g[g$mechanism == "posted_price_adaptive", ]
   expect_setequal(unique(ad$adapt_eta), c(0.05, 0.1, 0.2))
-  expect_setequal(unique(ad$adapt_target), c(0.8, 0.9, 1.0))
+  expect_setequal(unique(ad$adapt_target), c(0.9, 1.0, 1.1))
   expect_true(all(which(g$mechanism == "posted_price_adaptive") >
                     max(which(g$mechanism != "posted_price_adaptive"))))
   # Not in the frontier grid: it has no single level.
