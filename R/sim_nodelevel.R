@@ -1569,6 +1569,29 @@ node_run_single <- function(graph_type = c("tree", "sp", "entangled",
   )
 }
 
+#' The steps the demand-responsive posted price is tuned over.
+#'
+#' A fixed level the arm settles at is reached in roughly 1 / eta rounds, so
+#' the steps span settling in a few rounds (0.4) to a few tens (0.05), all
+#' inside the post-burn-in window of a 200-round run. The three original
+#' steps are kept exactly, so their runs stay the runs already made.
+#'
+#' @return Numeric vector.
+node_adaptive_etas <- function() c(0.05, 0.1, 0.2, 0.4)
+
+#' The targets the demand-responsive posted price is tuned over.
+#'
+#' The target is the screened demand at the posted level, relative to the
+#' most loaded node's capacity, that the level settles at. Below one the
+#' level settles where the demand it screens in leaves slack, which is where
+#' the queue a full node builds costs more than the tokens it adds; above one
+#' it settles where the packer rations. The span reaches half of capacity and
+#' half again over it, so a tuned target inside it is an optimum of the rule
+#' rather than of the grid. The three original targets are kept exactly.
+#'
+#' @return Numeric vector.
+node_adaptive_targets <- function() c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5)
+
 #' The demand-responsive posted price's next level.
 #'
 #' p_{t+1} = p_t (1 + eta (rho_t - rho*)): up after a round whose offered load
@@ -2415,8 +2438,8 @@ node_tuning_grid <- function(seeds) {
     # tuned level is chosen in the same grid, so it is not available when this
     # one is tuned. Appended last.
     tidyr::expand_grid(mechanism = "posted_price_adaptive", p_post_k = 1,
-                       reserve_markup = 1, adapt_eta = c(0.05, 0.1, 0.2),
-                       adapt_target = c(0.9, 1.0, 1.1))) %>%
+                       reserve_markup = 1, adapt_eta = node_adaptive_etas(),
+                       adapt_target = node_adaptive_targets())) %>%
     mutate(adapt_eta    = dplyr::coalesce(adapt_eta, 0),
            adapt_target = dplyr::coalesce(adapt_target, 1))
   tidyr::expand_grid(
@@ -2509,13 +2532,18 @@ node_eval_architecture <- function(x) {
 #' @param p_post_k       Its chosen posted level.
 #' @param reserve_markup Its chosen reserve markup.
 #' @return Logical vector.
-node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup) {
+node_knob_at_boundary <- function(mechanism, p_post_k, reserve_markup,
+                                  adapt_eta = NA_real_, adapt_target = NA_real_) {
   edge <- function(v, g) !is.na(v) & (v <= min(g) | v >= max(g))
   dplyr::case_when(
     mechanism %in% .posted_knob_arms() ~ edge(p_post_k,
                                               node_tuning_posted_levels()),
     mechanism %in% c("market", "market_cc") ~ edge(reserve_markup,
                                                    node_reserve_markups()),
+    # Two knobs: the optimum is on the grid's edge when either knob is.
+    mechanism == "posted_price_adaptive" ~
+      edge(adapt_eta, node_adaptive_etas()) |
+      edge(adapt_target, node_adaptive_targets()),
     TRUE ~ FALSE)
 }
 
@@ -2626,6 +2654,49 @@ node_knob_flat <- function(tuned, tuning_raw, cell_vars) {
          out, FALSE)
 }
 
+#' Flatness of the demand-responsive arm's tuned (step, target) pair.
+#'
+#' The one-knob rule of node_knob_flat() on each knob in turn: the chosen pair
+#' against the inward neighbour along that knob, the other knob held, paired
+#' by tuning seed. The pair is flat when every such interval covers zero.
+#'
+#' @param tuned      The tuned rows, carrying `adapt_eta` and `adapt_target`.
+#' @param tuning_raw Per-seed tuning rows, or NULL.
+#' @param cell_vars  The variables a knob was chosen inside.
+#' @return Logical vector, NA for other arms or where no neighbour exists.
+.adaptive_knob_flat <- function(tuned, tuning_raw, cell_vars) {
+  need <- c("seed", "adapt_eta", "adapt_target")
+  if (is.null(tuning_raw) || !all(need %in% names(tuning_raw))) {
+    return(rep(NA, nrow(tuned)))
+  }
+  keys <- intersect(cell_vars, names(tuning_raw))
+  tr <- tuning_raw %>%
+    dplyr::filter(.data$mechanism == "posted_price_adaptive") %>%
+    group_by(across(all_of(c(keys, "adapt_eta", "adapt_target", "seed")))) %>%
+    summarise(.w = mean(welfare, na.rm = TRUE), .groups = "drop")
+  same <- function(a, b) abs(a - b) <= 1e-9
+  vapply(seq_len(nrow(tuned)), function(i) {
+    r <- tuned[i, ]
+    if (r$mechanism != "posted_price_adaptive") return(NA)
+    d <- semi_join(tr, r[keys], by = keys)
+    at <- d[same(d$adapt_eta, r$adapt_eta) & same(d$adapt_target, r$adapt_target), ]
+    if (nrow(at) == 0L) return(NA)
+    covers <- logical(0)
+    for (ax in c("adapt_eta", "adapt_target")) {
+      other <- setdiff(c("adapt_eta", "adapt_target"), ax)
+      line  <- d[same(d[[other]], r[[other]]), ]
+      lv <- sort(unique(line[[ax]]))
+      j  <- which(same(lv, r[[ax]]))
+      if (length(j) != 1L || length(lv) < 2L) next
+      k  <- if (j <= length(lv) / 2) j + 1L else j - 1L
+      nb <- line[same(line[[ax]], lv[[k]]), ]
+      covers <- c(covers, .paired_t_covers_zero(
+        at$.w - nb$.w[match(at$seed, nb$seed)]))
+    }
+    if (length(covers) == 0L || anyNA(covers)) NA else all(covers)
+  }, logical(1))
+}
+
 #' What each mechanism reaches at its tuned knob, on the held-out seeds.
 #'
 #' `knob_at_boundary` and `knob_flat` are appended after the columns the table
@@ -2664,8 +2735,10 @@ node_tuned_table <- function(eval_raw, tuning_raw = NULL,
                                                     reserve_markup))
   tuned$knob_flat <- node_knob_flat(tuned, tuning_raw, cell_vars)
   if (!has_ceiling) tuned$welfare_over_ceiling <- NULL
-  # The demand-responsive arm is tuned over two knobs, a step and a target,
-  # which the one-knob boundary and flatness reads do not describe.
+  # The demand-responsive arm is tuned over two knobs, a step and a target:
+  # its optimum is on the edge when either knob is, and it is flat when the
+  # paired difference against each knob's inward neighbour, the other knob
+  # held, covers zero.
   ad <- tuned$mechanism == "posted_price_adaptive"
   tuned$knob_at_boundary[ad] <- NA
   tuned$knob_flat[ad] <- NA
@@ -2675,6 +2748,10 @@ node_tuned_table <- function(eval_raw, tuning_raw = NULL,
       summarise(adapt_eta = .one_of(adapt_eta),
                 adapt_target = .one_of(adapt_target), .groups = "drop")
     tuned <- left_join(tuned, knob, by = c(cell_vars, "mechanism"))
+    tuned$knob_at_boundary[ad] <- node_knob_at_boundary(
+      tuned$mechanism[ad], tuned$p_post_k[ad], tuned$reserve_markup[ad],
+      tuned$adapt_eta[ad], tuned$adapt_target[ad])
+    tuned$knob_flat[ad] <- .adaptive_knob_flat(tuned, tuning_raw, cell_vars)[ad]
   }
   dplyr::relocate(tuned, alloc_ratio_true, dplyr::any_of("welfare_over_ceiling"),
                   .after = knob_flat)

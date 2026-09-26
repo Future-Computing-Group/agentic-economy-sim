@@ -87,8 +87,11 @@ test_that("every winner pays the posted level", {
 test_that("the arm is tuned over its step and target and reported in the tuned table", {
   g <- node_tuning_grid(c(1L, 2L))
   ad <- g[g$mechanism == "posted_price_adaptive", ]
-  expect_setequal(unique(ad$adapt_eta), c(0.05, 0.1, 0.2))
-  expect_setequal(unique(ad$adapt_target), c(0.9, 1.0, 1.1))
+  expect_setequal(unique(ad$adapt_eta), c(0.05, 0.1, 0.2, 0.4))
+  expect_setequal(unique(ad$adapt_target),
+                  c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5))
+  # Thirty-six (step, target) pairs in each of the 48 cell x seed x level rows.
+  expect_equal(nrow(ad), 36L * 12L * 2L * 2L)
   expect_true(all(which(g$mechanism == "posted_price_adaptive") >
                     max(which(g$mechanism != "posted_price_adaptive"))))
   # Not in the frontier grid: it has no single level.
@@ -118,4 +121,76 @@ test_that("the arm is tuned over its step and target and reported in the tuned t
 test_that("the mechanism statistics name the arm", {
   src <- paste(deparse(stat_exp6), collapse = "\n")
   expect_true(grepl("posted_price_adaptive", src, fixed = TRUE))
+})
+
+
+# ---- the widened grid and its diagnostics ----------------------------------
+
+test_that("the widened grid keeps the nine pairs it had, byte for byte", {
+  g  <- node_tuning_grid(c(1L, 2L))
+  ad <- g[g$mechanism == "posted_price_adaptive", ]
+  old <- tidyr::expand_grid(adapt_eta = c(0.05, 0.1, 0.2),
+                            adapt_target = c(0.9, 1.0, 1.1))
+  pairs <- dplyr::distinct(ad, adapt_eta, adapt_target)
+  expect_equal(nrow(dplyr::semi_join(old, pairs, by = c("adapt_eta", "adapt_target"))), 9L)
+  expect_type(ad$adapt_eta, "double")
+  expect_type(ad$adapt_target, "double")
+  # the other arms carry the neutral pair, as before
+  expect_true(all(g$adapt_eta[g$mechanism != "posted_price_adaptive"] == 0))
+  expect_true(all(g$adapt_target[g$mechanism != "posted_price_adaptive"] == 1))
+})
+
+test_that("the boundary flag reads the edge of the (step, target) grid", {
+  b <- function(eta, target) node_knob_at_boundary(
+    "posted_price_adaptive", 1, 1, adapt_eta = eta, adapt_target = target)
+  expect_false(b(0.1, 1.0))
+  expect_false(b(0.2, 0.7))
+  expect_true(b(0.05, 1.0))
+  expect_true(b(0.4, 1.0))
+  expect_true(b(0.1, 0.5))
+  expect_true(b(0.1, 1.5))
+  # the other arms are read as before
+  expect_true(node_knob_at_boundary("posted_price_fcfs", 4, 1))
+  expect_false(node_knob_at_boundary("market", 1, 1.5))
+})
+
+adaptive_tuning <- function(peak_eta, peak_target, slope = 1, seeds = 1:4) {
+  tidyr::expand_grid(
+    graph_type = "tree", load_level = "high", architecture = "naive",
+    mechanism = "posted_price_adaptive", p_post_k = 1, reserve_markup = 1,
+    adapt_eta = node_adaptive_etas(), adapt_target = node_adaptive_targets(),
+    seed = seeds) %>%
+    dplyr::mutate(welfare = 10 - slope * (abs(log(adapt_eta / peak_eta)) +
+                                          abs(adapt_target - peak_target)) +
+                    seed / 1000)
+}
+
+tuned_from <- function(tuning) {
+  eg <- node_eval_grid(tuning, 11:12)
+  node_tuned_table(eg %>% dplyr::mutate(
+    welfare = 1, tokens_admitted = 1, median_latency = 1,
+    welfare_over_optimum = 1, alloc_ratio_true = 1), tuning)
+}
+
+test_that("the tuned table flags an adaptive optimum on the grid's edge", {
+  edge <- tuned_from(adaptive_tuning(0.4, 1.0))
+  r <- edge[edge$mechanism == "posted_price_adaptive", ]
+  expect_equal(r$adapt_eta, 0.4)
+  expect_true(r$knob_at_boundary)
+  inner <- tuned_from(adaptive_tuning(0.1, 0.9))
+  r <- inner[inner$mechanism == "posted_price_adaptive", ]
+  expect_equal(c(r$adapt_eta, r$adapt_target), c(0.1, 0.9))
+  expect_false(r$knob_at_boundary)
+})
+
+test_that("the tuned table reads flatness against each knob's inward neighbour", {
+  # A sharp peak: every neighbour is worse on every seed by the same margin.
+  peaked <- tuned_from(adaptive_tuning(0.1, 0.9, slope = 1))
+  expect_false(peaked$knob_flat[peaked$mechanism == "posted_price_adaptive"])
+  # A flat surface with seed noise: the neighbours are not separable.
+  set.seed(3)
+  flat <- adaptive_tuning(0.1, 0.9, slope = 0)
+  flat$welfare <- 10 + stats::rnorm(nrow(flat), sd = 0.5)
+  fl <- tuned_from(flat)
+  expect_true(fl$knob_flat[fl$mechanism == "posted_price_adaptive"])
 })
