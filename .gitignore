@@ -16,6 +16,9 @@ results/*
 !results/calibration/
 results/calibration/*
 !results/calibration/node-congestion-calibration.csv
+# The released node-level statistics and intervals the article's tables are read from
+!results/node-stats-report.csv
+!results/node-intervals.csv
 
 # Python bytecode (emulation harness tests)
 __pycache__/
